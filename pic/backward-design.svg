@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 300" font-family="'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#475569"/>
+    </marker>
+    <marker id="arrG" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+  <style>
+    .t    { fill:#1f2937; }
+    .dim  { fill:#64748b; }
+    .pill { fill:#f1f5f9; stroke:#94a3b8; stroke-width:1.2; }
+    .op   { fill:#fef3c7; stroke:#f59e0b; stroke-width:1.6; }
+    .grad { fill:#dcfce7; stroke:#22c55e; stroke-width:1.5; }
+    .flow { stroke:#475569; stroke-width:1.6; fill:none; marker-end:url(#arr); }
+    .drop { stroke:#94a3b8; stroke-width:1.4; fill:none; marker-end:url(#arrG); }
+    .fuse { fill:none; stroke:#dc2626; stroke-width:1.6; stroke-dasharray:7 5; }
+  </style>
+
+  <rect x="0" y="0" width="1100" height="300" fill="#ffffff"/>
+
+  <!-- 融合域红框 -->
+  <rect x="85"  y="58" width="312" height="88" rx="10" class="fuse"/>
+  <rect x="531" y="58" width="312" height="88" rx="10" class="fuse"/>
+  <text x="241" y="48" text-anchor="middle" font-size="11.5" class="dim">融合域 P1：边收边算</text>
+  <text x="687" y="48" text-anchor="middle" font-size="11.5" class="dim">融合域 P4：边算边发</text>
+
+  <!-- 主链箭头 -->
+  <line x1="77"  y1="102" x2="91"   y2="102" class="flow"/>
+  <line x1="225" y1="102" x2="239"  y2="102" class="flow"/>
+  <line x1="389" y1="102" x2="403"  y2="102" class="flow"/>
+  <line x1="523" y1="102" x2="537"  y2="102" class="flow"/>
+  <line x1="687" y1="102" x2="701"  y2="102" class="flow"/>
+  <line x1="835" y1="102" x2="849"  y2="102" class="flow"/>
+  <line x1="987" y1="102" x2="1001" y2="102" class="flow"/>
+
+  <!-- 梯度产物下垂箭头 -->
+  <line x1="315" y1="134" x2="315" y2="194" class="drop"/>
+  <line x1="613" y1="134" x2="613" y2="194" class="drop"/>
+  <line x1="769" y1="134" x2="769" y2="194" class="drop"/>
+
+  <!-- 主链节点 -->
+  <rect x="25" y="78" width="52" height="48" rx="24" class="pill"/>
+  <text x="51" y="107" text-anchor="middle" font-size="13" class="t">dy</text>
+
+  <rect x="93" y="70" width="132" height="64" rx="9" class="op"/>
+  <text x="159" y="97"  text-anchor="middle" font-size="13.5" font-weight="700" class="t">dispatch_bwd</text>
+  <text x="159" y="115" text-anchor="middle" font-size="10.5" class="dim">（dy · A2A）</text>
+
+  <rect x="241" y="70" width="148" height="64" rx="9" class="op"/>
+  <text x="315" y="97"  text-anchor="middle" font-size="14" font-weight="700" class="t">gemm(fc2)</text>
+  <text x="315" y="115" text-anchor="middle" font-size="10.5" class="dim">dgrad</text>
+
+  <rect x="405" y="70" width="118" height="64" rx="9" class="op"/>
+  <text x="464" y="107" text-anchor="middle" font-size="13.5" font-weight="700" class="t">SwiGLU 反向</text>
+
+  <rect x="539" y="70" width="148" height="64" rx="9" class="op"/>
+  <text x="613" y="97"  text-anchor="middle" font-size="14" font-weight="700" class="t">gemm(fc1)</text>
+  <text x="613" y="115" text-anchor="middle" font-size="10.5" class="dim">dgrad</text>
+
+  <rect x="703" y="70" width="132" height="64" rx="9" class="op"/>
+  <text x="769" y="97"  text-anchor="middle" font-size="13.5" font-weight="700" class="t">combine_bwd</text>
+  <text x="769" y="115" text-anchor="middle" font-size="10.5" class="dim">（反向 A2A）</text>
+
+  <rect x="851" y="70" width="136" height="64" rx="9" class="op"/>
+  <text x="919" y="107" text-anchor="middle" font-size="13.5" font-weight="700" class="t">topk 加权求和</text>
+
+  <rect x="1003" y="78" width="72" height="48" rx="10" class="pill"/>
+  <text x="1039" y="107" text-anchor="middle" font-size="12.5" class="t">d_hidden</text>
+
+  <!-- 梯度产物（绿） -->
+  <rect x="255" y="196" width="120" height="48" rx="9" class="grad"/>
+  <text x="315" y="217" text-anchor="middle" font-size="13" font-weight="700" class="t">dW2</text>
+  <text x="315" y="234" text-anchor="middle" font-size="10.5" class="dim">（fc2 wgrad）</text>
+
+  <rect x="553" y="196" width="120" height="48" rx="9" class="grad"/>
+  <text x="613" y="217" text-anchor="middle" font-size="13" font-weight="700" class="t">dW1</text>
+  <text x="613" y="234" text-anchor="middle" font-size="10.5" class="dim">（fc1 wgrad）</text>
+
+  <rect x="694" y="196" width="150" height="48" rx="9" class="grad"/>
+  <text x="769" y="217" text-anchor="middle" font-size="13" font-weight="700" class="t">dTopkWeight</text>
+  <text x="769" y="234" text-anchor="middle" font-size="10.5" class="dim">（gate 梯度）</text>
+
+  <text x="550" y="282" text-anchor="middle" font-size="11.5" class="dim">dW2 / dW1 交给优化器，dTopkWeight 传回框架里的 router（2.10）</text>
+</svg>

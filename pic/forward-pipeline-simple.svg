@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 340" font-family="'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">
+  <rect width="1240" height="340" fill="#ffffff"/>
+
+  <!-- chip -->
+  <rect x="32" y="18" width="118" height="32" rx="6" fill="#4a90d9"/>
+  <text x="91" y="40" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">FORWARD</text>
+
+  <!-- lane labels -->
+  <text x="40" y="106" font-size="14.5" font-weight="700" fill="#1f2937">AIV 通信/搬运</text>
+  <text x="40" y="186" font-size="14.5" font-weight="700" fill="#1f2937">AIV 计算</text>
+  <text x="40" y="266" font-size="14.5" font-weight="700" fill="#1f2937">AIC 计算</text>
+
+  <!-- lane guides -->
+  <line x1="180" y1="126" x2="1220" y2="126" stroke="#e5e7eb" stroke-width="1.2"/>
+  <line x1="180" y1="206" x2="1220" y2="206" stroke="#e5e7eb" stroke-width="1.2"/>
+  <line x1="180" y1="286" x2="1220" y2="286" stroke="#e5e7eb" stroke-width="1.2"/>
+
+  <!-- overlap brackets -->
+  <rect x="318" y="62" width="204" height="232" rx="10" fill="none" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="7 5"/>
+  <text x="420" y="56" text-anchor="middle" font-size="13" font-weight="700" fill="#dc2626">边收边算</text>
+  <rect x="928" y="62" width="134" height="232" rx="10" fill="none" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="7 5"/>
+  <text x="995" y="56" text-anchor="middle" font-size="13" font-weight="700" fill="#dc2626">边算边发</text>
+
+  <!-- lane1: AIV 通信/搬运 -->
+  <rect x="210" y="70" width="310" height="56" rx="8" fill="#f2994a"/>
+  <text x="365" y="104" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">dispatch</text>
+  <rect x="930" y="70" width="250" height="56" rx="8" fill="#f2994a"/>
+  <text x="1055" y="104" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">combine</text>
+
+  <!-- lane2: AIV 计算 -->
+  <rect x="715" y="150" width="140" height="56" rx="8" fill="#7e57c2"/>
+  <text x="785" y="184" text-anchor="middle" font-size="13.5" font-weight="700" fill="#ffffff">加权 SwiGLU</text>
+  <rect x="1085" y="150" width="110" height="56" rx="8" fill="#7a8ba8"/>
+  <text x="1140" y="184" text-anchor="middle" font-size="12.5" font-weight="700" fill="#ffffff">top-k 归约</text>
+
+  <!-- lane3: AIC 计算 -->
+  <rect x="320" y="230" width="380" height="56" rx="8" fill="#4a90d9"/>
+  <text x="510" y="264" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">FC1（grouped GEMM）</text>
+  <rect x="720" y="230" width="340" height="56" rx="8" fill="#4a90d9"/>
+  <text x="890" y="264" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">FC2（grouped GEMM）</text>
+
+  <!-- bottom notes -->
+  <text x="265" y="316" text-anchor="middle" font-size="12.5" fill="#94a3b8">填充 fill</text>
+  <text x="785" y="316" text-anchor="middle" font-size="12.5" fill="#94a3b8">激活藏进 FC2 的 vector 影子</text>
+  <text x="1160" y="316" text-anchor="middle" font-size="12.5" fill="#94a3b8">排空 drain</text>
+</svg>

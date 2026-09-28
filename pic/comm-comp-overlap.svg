@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 470" font-family="'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#475569"/>
+    </marker>
+    <marker id="arrG" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+  <style>
+    .t    { fill:#1f2937; }
+    .dim  { fill:#64748b; }
+    .comm { fill:#dbeafe; stroke:#3b82f6; stroke-width:1.4; }
+    .comp { fill:#fef3c7; stroke:#f59e0b; stroke-width:1.4; }
+    .idle { fill:#f8fafc; stroke:#94a3b8; stroke-width:1.2; stroke-dasharray:4 3; }
+    .fuse { fill:none; stroke:#dc2626; stroke-width:1.6; stroke-dasharray:7 5; }
+    .axis { stroke:#475569; stroke-width:1.6; fill:none; marker-end:url(#arr); }
+    .brk  { stroke:#94a3b8; stroke-width:1.2; fill:none; }
+    .conn { stroke:#94a3b8; stroke-width:1.4; fill:none; marker-end:url(#arrG); }
+  </style>
+
+  <rect x="0" y="0" width="1180" height="470" fill="#ffffff"/>
+
+  <!-- 图例 -->
+  <rect x="940" y="20" width="14" height="14" class="comm"/>
+  <text x="962" y="32" font-size="12" class="dim">通信 Comm</text>
+  <rect x="1050" y="20" width="14" height="14" class="comp"/>
+  <text x="1072" y="32" font-size="12" class="dim">计算 Comp</text>
+
+  <!-- ══ 面板 A：串行 ══ -->
+  <text x="60" y="90" font-size="13.5" font-weight="700" class="t">串行</text>
+  <!-- comm ×5 -->
+  <rect x="150" y="60" width="96" height="44" class="comm"/><text x="198" y="87" text-anchor="middle" font-size="12" class="t">Comm</text>
+  <rect x="246" y="60" width="96" height="44" class="comm"/><text x="294" y="87" text-anchor="middle" font-size="12" class="t">Comm</text>
+  <rect x="342" y="60" width="96" height="44" class="comm"/><text x="390" y="87" text-anchor="middle" font-size="12" class="t">Comm</text>
+  <rect x="438" y="60" width="96" height="44" class="comm"/><text x="486" y="87" text-anchor="middle" font-size="12" class="t">Comm</text>
+  <rect x="534" y="60" width="96" height="44" class="comm"/><text x="582" y="87" text-anchor="middle" font-size="12" class="t">Comm</text>
+  <!-- comp ×5 -->
+  <rect x="630" y="60" width="96" height="44" class="comp"/><text x="678" y="87" text-anchor="middle" font-size="12" class="t">Comp</text>
+  <rect x="726" y="60" width="96" height="44" class="comp"/><text x="774" y="87" text-anchor="middle" font-size="12" class="t">Comp</text>
+  <rect x="822" y="60" width="96" height="44" class="comp"/><text x="870" y="87" text-anchor="middle" font-size="12" class="t">Comp</text>
+  <rect x="918" y="60" width="96" height="44" class="comp"/><text x="966" y="87" text-anchor="middle" font-size="12" class="t">Comp</text>
+  <rect x="1014" y="60" width="96" height="44" class="comp"/><text x="1062" y="87" text-anchor="middle" font-size="12" class="t">Comp</text>
+  <!-- 总时长括号 -->
+  <path d="M 150 112 L 150 120 L 1110 120 L 1110 112" class="brk"/>
+  <text x="630" y="142" text-anchor="middle" font-size="12.5" class="dim">总时长 = T_comm + T_comp</text>
+
+  <!-- 面板间连接 -->
+  <line x1="630" y1="168" x2="630" y2="200" class="conn"/>
+  <text x="648" y="192" font-size="12" class="dim">切成 tile，两条道错位排开</text>
+
+  <!-- ══ 面板 B：分块流水 ══ -->
+  <text x="60" y="322" font-size="13.5" font-weight="700" class="t">分块</text>
+  <text x="60" y="340" font-size="13.5" font-weight="700" class="t">流水</text>
+
+  <!-- 重叠区红框 -->
+  <rect x="240" y="238" width="396" height="160" rx="10" class="fuse"/>
+  <text x="438" y="228" text-anchor="middle" font-size="12" fill="#dc2626">重叠区：通信藏在计算的影子里</text>
+
+  <!-- 通信 lane -->
+  <text x="110" y="286" text-anchor="middle" font-size="13" class="dim">通信</text>
+  <rect x="150" y="258" width="96" height="44" class="comm"/><text x="198" y="285" text-anchor="middle" font-size="12" class="t">Comm</text>
+  <rect x="246" y="258" width="96" height="44" class="comm"/><text x="294" y="285" text-anchor="middle" font-size="12" class="t">Comm</text>
+  <rect x="342" y="258" width="96" height="44" class="comm"/><text x="390" y="285" text-anchor="middle" font-size="12" class="t">Comm</text>
+  <rect x="438" y="258" width="96" height="44" class="comm"/><text x="486" y="285" text-anchor="middle" font-size="12" class="t">Comm</text>
+  <rect x="534" y="258" width="96" height="44" class="comm"/><text x="582" y="285" text-anchor="middle" font-size="12" class="t">Comm</text>
+  <!-- drain：通信 lane 尾部空窗 -->
+  <rect x="630" y="258" width="96" height="44" class="idle"/><text x="678" y="285" text-anchor="middle" font-size="11" class="dim">drain</text>
+
+  <!-- 计算 lane -->
+  <text x="110" y="376" text-anchor="middle" font-size="13" class="dim">计算</text>
+  <!-- fill：计算 lane 头部空窗 -->
+  <rect x="150" y="348" width="96" height="44" class="idle"/><text x="198" y="375" text-anchor="middle" font-size="11" class="dim">fill</text>
+  <rect x="246" y="348" width="96" height="44" class="comp"/><text x="294" y="375" text-anchor="middle" font-size="12" class="t">Comp</text>
+  <rect x="342" y="348" width="96" height="44" class="comp"/><text x="390" y="375" text-anchor="middle" font-size="12" class="t">Comp</text>
+  <rect x="438" y="348" width="96" height="44" class="comp"/><text x="486" y="375" text-anchor="middle" font-size="12" class="t">Comp</text>
+  <rect x="534" y="348" width="96" height="44" class="comp"/><text x="582" y="375" text-anchor="middle" font-size="12" class="t">Comp</text>
+  <rect x="630" y="348" width="96" height="44" class="comp"/><text x="678" y="375" text-anchor="middle" font-size="12" class="t">Comp</text>
+
+  <!-- 流水总时长括号 -->
+  <path d="M 150 406 L 150 414 L 726 414 L 726 406" class="brk"/>
+  <text x="438" y="436" text-anchor="middle" font-size="12.5" class="dim">总时长 ≈ max(T_comm, T_comp) + fill + drain</text>
+  <text x="762" y="436" font-size="12" class="dim">省下的 ≈ min(T_comm, T_comp)</text>
+
+  <!-- 时间轴 -->
+  <line x1="40" y1="456" x2="1120" y2="456" class="axis"/>
+  <text x="1132" y="460" font-size="12" class="dim">时间</text>
+</svg>

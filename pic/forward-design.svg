@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 260" font-family="'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <style>
+    .t    { fill:#1f2937; }
+    .dim  { fill:#64748b; }
+    .pill { fill:#f1f5f9; stroke:#94a3b8; stroke-width:1.2; }
+    .host { fill:#f1f5f9; stroke:#94a3b8; stroke-width:1.2; }
+    .ext  { fill:#ffffff; stroke:#94a3b8; stroke-width:1.4; stroke-dasharray:5 4; }
+    .op   { fill:#fef3c7; stroke:#f59e0b; stroke-width:1.6; }
+    .flow { stroke:#475569; stroke-width:1.6; fill:none; marker-end:url(#arr); }
+    .fuse { fill:none; stroke:#dc2626; stroke-width:1.6; stroke-dasharray:7 5; }
+  </style>
+
+  <rect x="0" y="0" width="1280" height="260" fill="#ffffff"/>
+  <text x="640" y="34" text-anchor="middle" font-size="12.5" class="dim">前向算子链 · ①–⑥ 对应 2.1 的形状账</text>
+
+  <!-- 融合域红框 -->
+  <rect x="348" y="84" width="276" height="88" rx="10" class="fuse"/>
+  <rect x="774" y="84" width="408" height="88" rx="10" class="fuse"/>
+  <text x="486" y="200" text-anchor="middle" font-size="11.5" class="dim">融合域：边收边算（dispatch_fc1）</text>
+  <text x="978" y="200" text-anchor="middle" font-size="11.5" class="dim">融合域：边算边发（fc2_combine）</text>
+
+  <!-- 主链箭头 -->
+  <line x1="76"   y1="128" x2="90"   y2="128" class="flow"/>
+  <line x1="208"  y1="128" x2="222"  y2="128" class="flow"/>
+  <line x1="340"  y1="128" x2="354"  y2="128" class="flow"/>
+  <line x1="478"  y1="128" x2="492"  y2="128" class="flow"/>
+  <line x1="616"  y1="128" x2="630"  y2="128" class="flow"/>
+  <line x1="766"  y1="128" x2="780"  y2="128" class="flow"/>
+  <line x1="904"  y1="128" x2="918"  y2="128" class="flow"/>
+  <line x1="1042" y1="128" x2="1056" y2="128" class="flow"/>
+  <line x1="1174" y1="128" x2="1188" y2="128" class="flow"/>
+
+  <!-- 节点 -->
+  <rect x="20" y="104" width="56" height="48" rx="24" class="pill"/>
+  <text x="48" y="133" text-anchor="middle" font-size="13" class="t">x</text>
+
+  <rect x="92" y="96" width="116" height="64" rx="9" class="ext"/>
+  <text x="150" y="124" text-anchor="middle" font-size="14" font-weight="700" class="t">router</text>
+  <text x="150" y="143" text-anchor="middle" font-size="10.5" class="dim">（库外）</text>
+
+  <rect x="224" y="96" width="116" height="64" rx="9" class="host"/>
+  <text x="282" y="133" text-anchor="middle" font-size="13.5" class="t">① 排序对齐</text>
+
+  <rect x="356" y="96" width="122" height="64" rx="9" class="op"/>
+  <text x="417" y="133" text-anchor="middle" font-size="13.5" font-weight="700" class="t">② dispatch</text>
+
+  <rect x="494" y="96" width="122" height="64" rx="9" class="op"/>
+  <text x="555" y="133" text-anchor="middle" font-size="13.5" font-weight="700" class="t">③ gemm(fc1)</text>
+
+  <rect x="632" y="96" width="134" height="64" rx="9" class="op"/>
+  <text x="699" y="133" text-anchor="middle" font-size="13.5" font-weight="700" class="t">④ 加权 SwiGLU</text>
+
+  <rect x="782" y="96" width="122" height="64" rx="9" class="op"/>
+  <text x="843" y="133" text-anchor="middle" font-size="13.5" font-weight="700" class="t">⑤ gemm(fc2)</text>
+
+  <rect x="920" y="96" width="122" height="64" rx="9" class="op"/>
+  <text x="981" y="133" text-anchor="middle" font-size="13.5" font-weight="700" class="t">⑥ combine</text>
+
+  <rect x="1058" y="96" width="116" height="64" rx="9" class="op"/>
+  <text x="1116" y="133" text-anchor="middle" font-size="13.5" font-weight="700" class="t">topk 归约</text>
+
+  <rect x="1190" y="104" width="56" height="48" rx="24" class="pill"/>
+  <text x="1218" y="133" text-anchor="middle" font-size="13" class="t">out</text>
+</svg>
