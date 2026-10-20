@@ -23,25 +23,25 @@ for step in range(global_waves + 2):
             _dispatch_dynamic_wave(pid, step + 1, ...)   # 发下一波
 ```
 
-专家按窗口分组（每波 WAVE_WINDOWS 个 tile），同一个 `step` 迭代里**错位执行四个波次的工作**：
+专家按窗口分组（每波 WAVE_WINDOWS 个 tile），循环前先由 vector lane 1 预发 w0/w1；循环内让不同波次的工作错位推进：
 
 ```text
 step:        0     1     2     3     4   ...
-vector 派发:       w0    w1    w2    w3         ← 子核1：永远发 step+1 波
-FC1+激活:          w0    w1    w2    w3         ← cube GEMM + 0号车道激活
-FC2:                     w0    w1    w2         ← cube，落后一格
-回传 combine:                  w0    w1         ← vector，再落后一格
+vector 派发:  —     w2    w3    w4    w5         ← lane 1；w0/w1 已预发
+FC1+激活:    w0    w1    w2    w3    w4         ← cube GEMM + 两条 vector lane 激活
+FC2:         —     w0    w1    w2    w3         ← cube，落后一格
+回传:        —     —     w0    w1    w2         ← 两条 vector lane，再落后一格
 ```
 
 ![前向三车道甘特图](../pic/forward-pipeline.png)
 
 *把镜头从"波"拉远到整条生产线：AIV 通信/搬运道上跑 allgather、dispatch、combine，AIV 计算道上跑 histogram、SwiGLU、unpermute，AIC 计算道上跑 GMM1、GMM2——dispatch 与 GMM1 错开、SwiGLU 藏进 GMM2 的影子、combine 收尾，就是上面那张 ASCII 图的工程版。*
 
-生产线转起来之后：dispatch 的搬运盖住了 FC1 的等待，FC1 的产出盖住了 FC2 的启动，FC2 的完成盖住了回传——**每一波在四个工位上同时有人在忙**。同步全部走第四章的细粒度信号（波内 ADD/SET 握手 + `dl.wait`），全局 barrier 只出现在头部元数据阶段，进流水线后一次都不要。
+生产线转起来之后，未来波的 dispatch 有机会与当前波计算重叠，较早波的结果也能进入回传。图表示逻辑上的错位安排；FC1/FC2 共用 cube，dispatch/激活/回传共用 vector 侧资源，并非四个独立引擎同时处理同一波。波间就绪走第四章的细粒度信号（ADD/SET + `dl.wait`），FC1 内部还用第六章的 cube/vector 事件交接 UB；循环后等待回传到齐，再做最终 top-k 归约。
 
 两处神来之笔单独说：
 
-1. **`global_waves + 2`**：多跑两拍是流水的 fill/drain——头两拍只能发不能算，尾两拍收尾；
+1. **`global_waves + 2`**：`step=0` 已开始 FC1，`step=1` 开始首波 FC2；额外两次迭代用于完成最后的 FC2 和回传。各段都有波数条件保护，dispatch 不会越过最后一波；
 2. **空 rank 也要发满所有波**（代码注释原文：*Keeping dispatch ahead of all return waits prevents a cross-rank dependency cycle*）：如果没活干的 rank 提前收工不发了，别的 rank 的回传等待和它的 dispatch 就可能互相等出**跨 rank 依赖环**——分布式系统里"没活干也要在场"的经典智慧。
 
 ## 9.2 读懂数据：SYS_CNT 相位打点（性能方法学·下）
@@ -65,9 +65,9 @@ def _sys_cnt_tick(dummy):
 
 1. **cube 侧的墙钟只能由 vector 车道括出来**——cube 引擎没有向量/标量 ALU，你放在 cube scope 里的计时运算会被整块丢弃，所以"FC1 花了多久"要用 vector 侧的进入/退出时钟夹出来；
 2. **跨运行只认原始 ticks**：SYS_CNT 的频率随环境波动（实测校准 958–993 ticks/µs，±3.6%），换算成 µs 再跨分支比较会引入这个量级的误差；
-3. **打点本身零侵入**：`TIMING` 是编译期开关，关掉时打点代码整个不存在（dead-arg 模式，`_phase_stamp` 的 docstring 明说打点现场全部编译消失）——测量的存在不能改变被测对象。
+3. **分别验证生产版与打点版**：`TIMING` 是编译期开关，关掉时计时代码按 dead-arg 模式消除；开启时仍会增加指令和 UB 临时量，不能称为零扰动。`test_fwd_phase_timing.py` 在计时前分别检查 `TIMING=0/1` 的正确性，分析时也要对照关闭打点的 E2E。
 
-拿这套打点看 Kimi-K3 单 kernel 前向的真实一次采集：routing 元数据合计 10.0 ms，占 kernel 的 **35%**，其中 route_scatter 5.66 ms（单 vector lane 稳定散射、另一子核空转）+ counts_publish 2.68 ms（pid0 单核 ~28 672 次依赖链 load）。针对性优化后 **10.0 → 3.4 ms、e2e 28.0 → 23.0 ms**（2026-09-19）。——**没有内窥镜，你永远不知道流水线其实三分之一时间在排队。**（这份数据也是第六章 vv 融合讨论的实证来源。）
+拿这套打点看 Kimi-K3 单 kernel 前向的历史采集：routing 元数据合计 10.0 ms，占 kernel 的 **35%**，其中 route_scatter 5.66 ms（当时为单 vector lane 稳定散射、另一子核空转）+ counts_publish 2.68 ms（pid0 单核 ~28 672 次依赖链 load）。针对性组合优化后 **10.0 → 3.4 ms、E2E 最小值 28.0 → 23.0 ms**（2026-09-19）。这说明流水启动前的元数据也可能是首要优化目标。测试条件、统计口径与当前代码差异见第六章 6.3/6.5。
 
 ## 9.3 为什么当前反向以相位制为骨架
 

@@ -24,7 +24,7 @@
 | 三 | [通信与计算掩盖的艺术](chapters/03-mega-moe-td-walkthrough.md) | 掩盖五招：引擎分工、细粒度信号、双 buffer、影子流水、尾部填充 | 入门主线 |
 | 四 | [通信基础：从对称内存到 Triton custom op](chapters/04-comm-primitives.md) | 对称寻址与数据搬运 → 信号交接 → custom op 编译链；以 wait 的 IR 转换和设备轮询为例 | 入门 · 提高 |
 | 五 | [和 EP/DP/PP/TP 的关系，以及怎么接进框架](chapters/05-ep-and-framework.md) | 框架配置 DP/FSDP，MegaMoE 执行 EP；普通参数与专家参数的分组、三层接口及内存归属 | 入门 · 提高 |
-| 六 | [NPU 和 GPU：两套硬件，两种掩盖哲学](chapters/06-npu-vs-gpu.md) | cv 融合与 SM/warp 分工两种代表设计；按阶段分析 vv 收益；NPU 亲和设计与“让 reduce 搭便车” | 入门 · 提高 |
+| 六 | [NPU 和 GPU：两套硬件，两种掩盖哲学](chapters/06-npu-vs-gpu.md) | 从真实代码看 cv 双缓冲与 GPU worker 分工；按关键路径分析 vv、路由布局和 UB 预算 | 入门 · 提高 |
 | 七 | [MoonEP：负载均衡为什么值得焊进大算子](chapters/07-moonep.md) | 木桶效应 → 副本式均衡（B.0–B.3）→ 规划/预取/归约全部 device 侧闭环 | 进阶 |
 | 八 | [省显存的艺术：重算怎么设计](chapters/08-recompute.md) | 保留路由快照与 FC1 输出，重建接收 token 和加权激活；保存精度、卸载与选择性重算的取舍 | 进阶 |
 | 九 | [前向的全局流水，以及反向的相位制选择](chapters/09-global-pipeline.md) | 前向三级波流水；反向依赖网也可流水化，当前以相位制为骨架并探索局部流水 | 进阶 · 压轴 |
@@ -45,6 +45,6 @@
 - [ ] 插图待补（第二批）：带实测相位数据的反向流水甘特图
 - [ ] 第七章 MoonEP 实测数字：跑 `moonep-skewed` 配对用例（trimmed-skewed vs skewed，开/关 MoonEP 对照）后填入
 - [ ] 第二章 2.9 的回转置数字（9.6 / 3.98 / 4.5 ms）与第三章 3.6 的反向打点表：补录测试配置与日期，补录时一并校准行项（分阶段打点约数）与 E2E（端到端实测）的口径差异
-- [ ] 第六章 GPU 侧贴真实代码（UniEP 开源代码发布后补；现为文字描述）
+- [x] 第六章 GPU 侧补入 Triton-distributed 的 GEMM + all-reduce 分工及 copy-engine 对照；UniEP 保留论文层面指引
 - [ ] 第九章补一次真实相位打点数据表的完整示例
 - [ ] 术语表与"进一步阅读"分章链接（视读者反馈决定是否加附录）
