@@ -2,164 +2,263 @@
 
 > **入门主线 · 提高篇 2/3** ｜ [返回目录](../README.md)
 
-**一句话：EP 是 MoE 特有的并行维度，和 DP/TP/PP 正交组合；mega_moe 就是 EP 这一个维度的"通信+计算执行体"，对外只暴露一层 PyTorch 接口——而接口背后，它还得自己管好三本内存账。**
+**一句话：框架决定参数怎么分、数据怎么分、梯度怎么同步；MegaMoE 接过路由结果，完成 EP 内部的通信与专家计算。DP 可以在框架层配置，两者通过明确的参数归属和接口接在一起。**
 
-## 5.1 EP：第五个并行维度
+前三章讲了 MoE 怎样算，第四章讲了通信原语怎样支撑它。这一章把视角往上移一层：一个能独立跑通前反向的大算子，怎样进入完整的训练过程？
 
-经典四维（DP/TP/PP/SP）之外，MoE 多出一个天然维度：**专家并行（EP）**——896 个专家切到 8 张卡，每卡供养 112 个。组合空间里最常见的形态：
+沿用前面的主线，我们先看 EP 与其他并行方式的关系，再看 PyTorch 和宿主框架怎样调用它，最后看算子自己的内存由谁管理。框架部分以同目录下的 **FSDPTurbo_5387** 为例，算子部分对应 **Mega-MoE-TD**；接口和限制以这两份本地源码为准。
+
+## 5.1 EP 多出来的，是“按专家分工”
+
+一个 Transformer 层里，不同部分可以采用不同的分工方式。先把几个缩写各自回答的问题摆出来：
+
+| 并行方式 | 分的是什么 | 放到 MoE 训练里怎样理解 |
+|---|---|---|
+| DP：数据并行 | 输入数据；各副本计算后同步同一参数的梯度 | 不同 rank 处理不同样本，普通参数可以复制，也可以配合 FSDP 分片 |
+| TP：张量并行 | 一个算子的权重和计算维度 | 比如把一个线性层的矩阵乘法分给多张卡 |
+| PP：流水线并行 | 模型的层 | 不同 stage 负责不同层，传递 microbatch 的激活与梯度 |
+| SP/CP：序列或上下文并行 | 序列维上的激活与计算 | 具体通信方式取决于实现，不能统一当成另一种参数切分 |
+| EP：专家并行 | 不同专家 | 每张卡持有一部分专家，token 按路由结果找到对应专家 |
+
+例如 896 个专家做 EP=8，每张卡持有 112 个专家。与 TP 把一个专家的矩阵继续切开相比，EP 的基本分工是“你算这些专家，我算那些专家”。普通 EP 下，同一专家的 gate/up/down 权重都在它的归属 rank 上。
 
 ```text
-               ┌─ attention：TP 或 SP 或 DP
-一个 transformer ─┤
-               └─ FFN(MoE)：EP（mega_moe 在这里）
-PP 按层切，与上面正交
+同一组设备上的一个 Transformer 层
+    attention、router 等普通模块：由框架安排 DP/FSDP、TP 等
+    routed experts：按专家切分，用 EP 执行 dispatch → 专家计算 → combine
+
+沿模型深度还可以考虑 PP；跨模块的张量布局与调度由框架衔接。
 ```
 
-通信特征对比（为什么 EP 大规模下划算）：
+这里说“可以组合”，指的是这些分工解决不同问题。**它们不一定是同一张网格上可以直接相乘的独立维度。** 普通参数和专家参数可能使用两套网格；具体实现也未必支持每一种组合。后面会看到，同样 8 张卡，普通参数可以做 FSDP=8，专家参数同时做 EP=8，并不需要 64 张卡。
 
-- TP：每层两次 all-reduce，字节量 ∝ hidden × token；
-- EP：一层两次 all-to-all，字节量 ∝ hidden × token × topk——但**专家权重不用每卡复制**，总显存随卡数线性下降。
+EP 也不是“通信天然更少”。一次前向中，dispatch 和 combine 是两次逻辑上的 all-to-all 数据交换，数据量大致随 token 数、hidden size 和 top-k 增长；MegaMoE 用设备侧搬运实现它们，不一定调用两个 host collective。TP 则常有 all-reduce 或 reduce-scatter/all-gather，次数取决于具体切分方式。
 
-`FusedMoEForward.__init__` 的真实签名（注意 `num_experts` 必须被 world size 整除——896/8=112）：
+EP 的直接收益是分摊专家参数：固定专家总数时，每卡的常驻专家权重大致降到原来的 `1 / EP`。但集群仍要存下这些参数，而且接收缓冲区、激活和可能的专家副本会增加显存开销，不能据此说总显存也按同样比例下降。
+
+## 5.2 为什么说 MegaMoE 是“特殊的 EP”？
+
+特殊之处在执行方式。普通 EP 往往由框架依次调用 token 排列、通信、grouped GEMM、激活和回传；MegaMoE 把这一段交给统一的执行体，在内部安排第三章讲的通信与计算重叠。
+
+```mermaid
+flowchart TD
+    A[框架：输入 hidden states] --> B[模型 router：专家编号与路由权重]
+    B --> C[框架适配层：整理布局、取本地专家权重]
+    C --> D[MegaMoE：dispatch、专家计算、combine]
+    D --> E[回到原 rank、恢复原 token 顺序]
+    E --> F[框架：后续层、loss、反向与优化器]
+```
+
+这个边界很重要。`FusedMoEForward` 是 **post-routing** 算子：输入已经包括每个 token 选中的专家编号和路由权重。router 怎样算分数、怎样选 top-k，仍属于模型；MegaMoE 负责把选中的专家算完，输出与输入 token 对齐的结果。共享专家分支若由模型另行实现，也不会因为换了 dispatcher 就自动包含进来。
+
+前向入口 [`FusedMoEForward`](../../Mega-MoE-TD/src/mega_moe/ops/forward.py) 的构造参数说明了它关心什么：
 
 ```python
-# src/mega_moe/ops/forward.py:78-114（摘）
-def __init__(
-    self,
-    ep_group: Optional[torch.distributed.ProcessGroup],
-    *,
-    max_tokens_per_rank: int,
-    hidden_size: int,
-    top_k: int,
-    num_experts: int,
-    config: Optional[MoEForwardConfig] = None,
-):
-    """Create one BF16-only post-routing MoE forward instance.
-    ``ep_group`` must match the complete ACLSHMEM world. ..."""
+# 接口摘录；省略类型标注和函数体。
+def __init__(self, ep_group, *, max_tokens_per_rank,
+             hidden_size, top_k, num_experts, config=None):
     ...
-    if num_experts % self.world_size:
-        raise ValueError("num_experts must be divisible by the EP world size")
-    self.experts_per_rank = num_experts // self.world_size
 ```
 
-## 5.2 接入 PyTorch：三层接口
+它要知道 EP 组、token 容量、专家数量和计算形状；专家数还必须能被 EP 组大小整除。这里没有 DP 大小、优化器类型或 PP 调度表，因为这些由框架负责。
 
-**第一层：`torch.nn.Module`。** 上面的 `FusedMoEForward` 本身就是 Module，前向编排全在里面。
+开启第七章的 MoonEP 后，部分专家还可以临时复制到其他 rank 分担负载。但专家的参数归属仍然存在，副本产生的梯度要回到原专家。**临时分担一次专家计算，与建立一份长期的模型训练副本，是两件不同的事。**
 
-**第二层：`torch.autograd.Function`。** 训练要反向，于是有 `MegaMoEFunction`——前向调 `op.forward(..., return_saved=True)` 把反向要用的中间量顺手存下，backward 调 `moe_backward_triton`。它的 apply 契约是使用者必须背下来的八股：
+## 5.3 MegaMoE 怎么和 DP 一起开：在框架层配置
+
+DP 与 MegaMoE 的衔接可以从一次训练迭代理解：各 rank 先处理自己的输入，在进入 MoE 时通过 EP 交换 token，算完后结果回到源 rank，继续后续层。反向时，MegaMoE 返回输入、路由权重和专家权重的梯度；框架再按参数各自的并行分组完成同步、缩放和优化器更新。
+
+要把它配对，首先要问：**哪些 rank 上持有的是同一个参数？**
+
+### 普通参数和专家参数，各有一张分组图
+
+先用 4 张卡、4 个专家说明。假设普通参数在四张卡上复制，而专家采用 EP=2、专家数据并行 EDP=2：
+
+| rank | 本地输入 | 持有的专家 | 所属 EP 组 |
+|---:|---|---|---|
+| 0 | 数据 A | e0、e1 | {0, 1} |
+| 1 | 数据 B | e2、e3 | {0, 1} |
+| 2 | 数据 C | e0、e1 的另一份副本 | {2, 3} |
+| 3 | 数据 D | e2、e3 的另一份副本 | {2, 3} |
+
+对普通参数，四张卡持有相同权重，梯度可以在 `{0,1,2,3}` 中同步。对专家参数，e0/e1 的副本组是 `{0,2}`，e2/e3 的副本组是 `{1,3}`；同步应当发生在这些组里。
+
+不能把 rank 0 上 e0 的梯度和 rank 1 上 e2 的梯度当成同一个参数做平均。EP 内发生的是 token 路由和专家计算；EDP 内同步的才是同一组专家的不同副本。这张表说明通用的 EP+EDP 拓扑，是否能在某个 dispatcher 上直接启用，还取决于它的通信会话实现。
+
+FSDPTurbo 的 [`ParallelState`](../../FSDPTurbo_5387/fsdp_turbo/distributed/parallel_state.py) 正是分开建立两张网格：
 
 ```python
-# src/mega_moe/ops/function.py:48-68（摘）
-"""Args (``apply``, in order):
-
-    op                ``FusedMoEForward`` that will run the pass
-    hidden_states     ``[B, H]``                                (grad)
-    routing_weights   ``[B, topk]`` contiguous FP32             (grad)
-    selected_experts  ``[B, topk]`` int expert ids              (no grad)
-    gate_up_weight    packed ``[E_p, H, 2F]`` gate/up table     (grad)
-    down_weight       ``[E_p, H, F]``                           (grad)
-    peer_mem          shared symmetric buffer at heap offset 0 — must be
-                      the session's FIRST symmetric allocation.
-    state             caller-owned persistent namespace carrying the
-                      backward's cross-step runtime state (``signal_mem`` /
-                      ``epoch``)...
-"""
+# ParallelState.__post_init__（摘）
+self.data_parallel_size = self._create_mesh(
+    ('dp', 'fsdp', 'tp'),
+    (self.fully_shard_parallel_size, self.tensor_parallel_size),
+)
+self.expert_data_parallel_size = self._create_mesh(
+    ('edp', 'efsdp', 'ep'),
+    (self.expert_fully_shard_parallel_size, self.expert_parallel_size),
+)
 ```
 
-典型用法：
+`fsdp` 是普通参数的全分片维度；`efsdp` 是专家参数的全分片维度。`_create_mesh` 用总进程数除以后面各维的乘积，求出前面的 `dp` 或 `edp`。在这份实现里，相应关系是：
+
+```text
+普通参数：world_size = dp × fsdp × tp
+专家参数：world_size = edp × efsdp × ep
+```
+
+这是同一批设备的两种组织方式。不能再把两行的并行度乘在一起算卡数。
+
+### 一组 8 卡，框架怎样配置 DP/FSDP + EP
+
+本地 DeepSeek-V4 示例采用普通参数 FSDP=8、专家参数 EP=8。若希望普通参数采用两个数据并行副本、每个副本内部做 4 卡 FSDP，可以在框架中配置下面这组拓扑：
+
+```yaml
+# 8 进程场景的配置片段；其余模型、数据和 fsdp_plan 仍由完整配置提供。
+distributed:
+  data_parallel_size: 2
+  fully_shard_parallel_size: 4
+  tensor_parallel_size: 1
+  expert_parallel_size: 8
+  expert_fully_shard_parallel_size: 1
+  expert_data_parallel_size: 1
+  ep_plan:
+    apply_modules:
+      - model.layers.{*}.mlp.experts
+    apply_efsdp_modules:
+      - model.layers.{*}.mlp.experts
+    dispatcher: "megamoe-triton"
+    megamoe_enable_moonep: false
+```
+
+`data_parallel_size` 和 `expert_data_parallel_size` 在这里写出了预期值；初始化时仍会按网格公式重新求得。不能在 world size 不变时，单独把 DP 字段改大而保持其他维度不动。
+
+在上述 8 卡排列中，普通参数的 FSDP 组是 `{0,1,2,3}` 和 `{4,5,6,7}`，DP 副本维对应 `{0,4}`、`{1,5}`、`{2,6}`、`{3,7}`。专家参数则在 `{0,…,7}` 中做 EP，没有额外的专家副本。MegaMoE 不需要因此新增一个 `dp_size` 参数。
+
+[`FSDPTurbo.apply_fsdp_modules`](../../FSDPTurbo_5387/fsdp_turbo/fsdp_turbo.py) 会把 `dp_fsdp` 网格交给 FSDP2，使普通参数既按 FSDP 维分片，也按 DP 副本维归约梯度。专家参数则经过独立的 EP/EFSDP 包装；配置校验在普通 FSDP 分片开启时把 EP 模块加入其忽略列表，避免让两套参数分工混在一起。
+
+上面的片段是依据网格代码推导的配置示意，本章没有对它重新做多卡训练验证。现成的完整配置可看 [`config_megamoe_moonep.yaml`](../../FSDPTurbo_5387/examples/deepseekv4/config_megamoe_moonep.yaml)：它使用 `fsdp=8, ep=8`，并额外开启 MoonEP。
+
+### 当前接入边界，以及梯度由谁收尾
+
+算子要求传入的 EP 组与 ACLSHMEM 会话的参与者及 rank 编号对应。本地 dispatcher 的 `_MegaMoeSession` 进一步要求 **EP 大小等于训练任务的 world size**。所以，普通参数的 DP/FSDP 可以由框架配置；前面 4 卡表中那种多个 EP 组、专家还有 EDP 副本的拓扑，当前 dispatcher 尚不能只靠改 YAML 启用。
+
+要支持那种拓扑，需要在适配层补齐各 EP 子组的通信会话初始化、rank 映射和缓冲区管理。这是当前宿主接入的边界，不是 DP 与 EP 在原理上不兼容。
+
+梯度也有两种不同的汇总。某专家从 EP 组各 rank 接到的 token，都会对它的权重梯度作贡献，这部分在专家反向中累加；若还有 EDP 副本，框架再在副本间同步。同一训练目标下，普通参数与专家参数的梯度还要使用一致的 loss 归一化口径。
+
+本地 `fsdp_turbo_config.py::validate_ep_config` 默认把专家的 `gradient_divide_factor` 设为 `ep × efsdp × edp`，再由 `expert_fully_shard_modules` 交给框架的梯度归约接口。因此，看到 EDP=1，不能直接推断专家梯度无需缩放；具体因子要结合 loss 定义、数据分组和框架的归约方式理解。
+
+TP 和 PP 也遵循这种分工：框架负责模块布局与层间调度，MegaMoE 消费符合契约的本地张量。不过当前接口接收的是完整本地专家矩阵，没有独立的 expert-TP 接口；PP 若让多个 microbatch 的前向保存值同时存活，还要配套管理 workspace 和快照。这里不把它们写成已验证的任意组合。
+
+## 5.4 接入 PyTorch：三层接口怎样接起来
+
+### 第一层：`nn.Module` 组织算子执行
+
+`FusedMoEForward` 继承 `torch.nn.Module`，维护前向 context、路由规划及内部计算。它接收专家权重作为输入，并不接管宿主模型的参数注册和优化器。
+
+这让职责比较清楚：框架决定参数放在哪里、什么时候可供计算；算子在拿到本地权重后执行 MoE。使用 FSDP 时，所需权重也要先由框架准备好，再进入计算接口。
+
+### 第二层：`autograd.Function` 接通反向
+
+Triton kernel 内部的计算不会自动展开成普通 PyTorch 算子的计算图。因此 [`MegaMoEFunction`](../../Mega-MoE-TD/src/mega_moe/ops/function.py) 显式定义前向和反向：前向调用 `op.forward(..., return_saved=True)`，保存本次反向需要的中间结果；反向调用 `moe_backward_triton`，把梯度按输入顺序交回 autograd。
+
+设 `T` 为本 rank 的 token 数、`H` 为 hidden size、`F` 为专家中间维度、`E_p` 为本地专家数，核心张量契约是：
+
+| 输入 | 布局 | 反向返回梯度 |
+|---|---|---|
+| `hidden_states` | `[T, H]`，BF16 | 是，继续传到前面的网络 |
+| `routing_weights` | `[T, top_k]`，连续 FP32 | 是，继续传到 router 的可微计算 |
+| `selected_experts` | `[T, top_k]`，整数专家编号 | 否，离散选择本身不求导 |
+| `gate_up_weight` | `[E_p, H, 2F]`，BF16 | 是 |
+| `down_weight` | `[E_p, H, F]`，BF16 | 是 |
+
+调用结构如下。这里假设宿主已经完成通信初始化，并准备好 `op`、共享反向缓冲区 `peer_mem` 和持久状态 `state`，并非独立可运行脚本：
 
 ```python
-op = FusedMoEForward(ep_group, max_tokens_per_rank=..., hidden_size=...,
-                     top_k=..., num_experts=...,
-                     config=MoEForwardConfig(enable_single_kernel_forward=True))
-output = MegaMoEFunction.apply(op, hidden_states, routing_weights,
-                               selected_experts, gate_up_weight, down_weight,
-                               peer_mem, state)
-output.backward(dy)   # 自动进入 moe_backward_triton
+output = MegaMoEFunction.apply(
+    op, hidden_states, routing_weights, selected_experts,
+    gate_up_weight, down_weight, peer_mem, state,
+)
+# output 接回模型；loss.backward() 时自动进入 MegaMoEFunction.backward。
 ```
 
-**第三层：宿主训练框架。** 通过 MindSpeed-MM 的 `ep_plan.dispatcher: megamoe` 配置项，把整网训练的 MoE 层指到本库——框架管 DP/PP/优化器，mega_moe 管 EP 这一段。
+返回给 router 的是路由权重的梯度，而不是专家编号的梯度。只要适配层保留这条计算图，router 的相关参数就仍然能训练。
 
-## 5.3 使用者必须知道的三条纪律
+### 第三层：宿主 dispatcher 翻译模型接口
 
-接口虽薄，纪律很硬，全部来自对称内存的物理约束：
+FSDPTurbo 的 [`expert_parallelize_modules`](../../FSDPTurbo_5387/fsdp_turbo/distributed/expert_parallel/expert_parallel.py) 先沿专家维 `Shard(0)` 切分参数，再把匹配到的 experts 模块的 `forward` 替换为所选 dispatcher。这里配置名是 `megamoe-triton`。
 
-1. **single-in-flight**：算子实例的 workspace 是复用的，同一时刻只能有一个前向在飞。代码里有 owner/generation 双重门，反向开始前先验证 saved 没被下一轮前向覆写；
-2. **`peer_mem` 必须是会话的第一个对称分配**（heap offset 0）——这是当前 Mega-MoE 接口保留的接入契约，不是对称内存模型的一般限制（见第四章 4.5）；
-3. **`state` 必须跨迭代复用**。docstring 写得很清楚：不带着 state 走，每步都重新分配对称信号槽（**对称堆泄漏**），而且届号归 1（旧信号残影会被读成新的——第四章讲过的正确性问题）。
+[`get_experts_forward_megamoe_triton_fn`](../../FSDPTurbo_5387/fsdp_turbo/distributed/expert_parallel/dispatcher_megamoe_triton.py) 为每个 experts 模块创建一个闭包，持有这一层的 `op` 和 `op_state`。每次调用时，它把模型接口翻译成算子接口：
 
 ```python
-# src/mega_moe/ops/function.py:61-68（摘）
-    state             caller-owned persistent namespace ... Without it every
-                      step would re-allocate symmetric tile-signal slots
-                      (symmetric heap leak) and restart the SET epoch at 1
-                      (stale signal values would read as fresh).
+# 据 dispatcher 简写；_local_weight 对 DTensor 调用 to_local()。
+hidden_states = hidden_states.reshape(-1, hidden_dim).contiguous()
+selected_experts = top_k_index.to(torch.int32).contiguous()
+routing_weights = top_k_weights.float().contiguous()
+
+gate_up_proj = _local_weight(self.gate_up_proj)
+gate_up_weight = gate_up_proj.transpose(1, 2).contiguous()
+down_weight = _local_weight(self.down_proj).contiguous()
 ```
 
-**接口的每一句"废话"，都是某个深夜事故的墓志铭。**
+以 DeepSeek-V4 为例，框架里的 gate/up 参数是 `[E_p, 2F, H]`，算子要 `[E_p, H, 2F]`，因此需要转置并连续化。这里没有 `detach()`，权重梯度会通过这次布局变换回到原参数。路由权重的 FP32 转换也保留梯度路径。
 
-## 5.4 算子怎么管自己的内存（怎么存）
+适配还包括激活语义：这个模型使用的 `clamp_swiglu` 要与算子的 activation 和 `clamp_limit` 对齐。仅仅让形状匹配，不能保证换完算子后仍在训练同一个模型。
 
-框架接入者最容易忽略的一件事：这个算子不是"无状态"的，它自己养着一整套内存。看 workspace 的定义：
+## 5.5 算子自己的内存：存什么，由谁持有
 
-```python
-# src/mega_moe/runtime/workspace.py:10-18（摘）
-@dataclass
-class MoEForwardContext:
-    """Single-in-flight symmetric buffers and reusable routing workspaces.
+框架看到了输入输出和参数，不代表它会自动管理算子内部所有缓冲区。第四章已经介绍对称内存和容量预算，这里只看它们在整网里的归属。
 
-    A routing plan must be consumed before the next plan is built because the
-    device metadata tensors are intentionally reused in place.
-    """
+| 内存类别 | 主要内容 | 在当前接入中怎样持有 |
+|---|---|---|
+| 通信缓冲区 | token 接收区、路由权重、信号、可选的专家副本表 | 会话或算子 context 持有，在多次调用间复用 |
+| 常驻 workspace | 路由计数、桶偏移、token/route 索引、反向临时空间 | 算子和持久 `state` 持有；新一轮计算会复用其中一部分 |
+| 本次前向的保存值 | 路由快照、FC1 输出及反向需要的其他张量或引用 | `MegaMoEFunction` 的 autograd context 持有，供对应反向使用 |
+
+这些是按用途分类，不意味着所有元数据都来自普通 PyTorch 分配；部分计数表本身也在对称堆里。
+
+宿主里的对象关系大致如下：
+
+```text
+一个进程的 _MegaMoeSession
+    ├─ ACLSHMEM 会话
+    ├─ 多层共用的反向 peer_mem
+    └─ 登记各层的 op，负责结束时清理
+
+每个 experts 模块的 dispatcher 闭包
+    ├─ 本层 FusedMoEForward：context、前向工作区
+    └─ 本层 op_state：跨迭代的反向缓冲区与 epoch
+
+每次前向对应的 autograd context
+    └─ saved：这次反向要用的中间量或快照
 ```
 
-一本"三层内存账"：
+注意区分两块都叫 `peer_mem` 的内存：传给 `MegaMoEFunction.apply` 的是会话先分配、各层共用的**反向**缓冲区；`op.context.peer_mem` 是算子自己的**前向**接收区。当前接口明确不把后者当成前者的默认替代。这也解释了为什么框架适配层先建立 session，再创建各层的 op。
 
-1. **对称堆（通信面）**：`peer_mem`（token 接收区）、`routing_weight_mem`、`signal_mem` 全部用 `ash.aclshmem_create_tensor` 分配在对称堆上。顺序即纪律——`peer_mem` 必须第一个（第四章）；**尺寸即预算**——`peer_mem` 的行数上限在建 context 时按 `T·k·receive_capacity_factor` 定死、全员同尺寸，这笔"按最坏倾斜买地"的账 4.6 节已经算过（包括默认 cf=W 的满配保险和赌错时的 fail-fast 兜底）；`signal_mem` 是一张大表同时装 dispatch 就绪槽和 replica 权重就绪槽（`dispatch_signal_slots + 3 * replica_budget`，槽 ABI 16 个 int32）：
+接收区大小仍按第四章的 `ceil(T × top_k × receive_capacity_factor)` 预算，并非每步按实际收到多少 token 重新分配。多层各自持有工作区时，整网显存还会累加；因此参数分片省下多少，与整个模型最终省下多少，需要分开计算。
 
-```python
-# src/mega_moe/runtime/workspace.py:166-175（摘）
-    # Dispatch readiness and replica-weight readiness share one eagerly
-    # initialized symmetric allocation.  A slot occupies 16 int32 values to
-    # match the ACLSHMEM signal ABI used by the existing dispatch pipeline.
-    ...
-    # UDMA writes a 64-bit notify into the first two words of each aligned
-    # slot; Cube dl.wait acquires its low int32 word. Down has two N panels.
-```
+保存值的生命周期则取决于执行路径。多 kernel 路径的部分保存值引用可复用工作区，前向重跑可能覆盖旧路由；当前单 kernel 路径带有独立快照标记，反向允许相应的历史 generation。不能把两种路径概括成完全相同的保存规则。
 
-2. **常驻 workspace（元数据面）**：路由规划的全部中间表（计数、偏移、波偏移……）挂在 context 上**原地复用**——docstring 那句 "intentionally reused in place" 就是 single-in-flight 在内存面的表述：不重新分配、不清零、每轮覆写。省下的是分配器和清零的墙钟，付掉的代价是"上一轮的 plan 没消费完就不能建下一轮"。用完整个 context 走 `finalize()` 释放对称分配。
-3. **大激活（save 面）**：反向要吃的 fc1_output 等，量级最大（Kimi-K3 下几百 MB/层），策略也最多——压缩存 / 搬主机 / 重算三档。这层的思想下面说，细节第八章展开。
+本地宿主仍采用每层一个 op，并在完整示例中只对 attention 配置框架重算。**框架重跑一次 MoE forward，与算子在 backward 内选择性重建中间量，作用范围不同。** 保存精度、卸载和内部重算留到第八章展开；在本章，只需要建立“可复用工作区”和“本次反向必须保留的数据”这两个概念。
 
-## 5.5 大激活怎么办（怎么卸载——代码思想）
+## 5.6 小结
 
-框架自带的 activation offload（`saved_tensors_hooks` / SwapTensor 那一套）为什么管不到它？因为这个 saved dict 是算子自己攒的，**不在 autograd 的标准保存路径上，框架根本看不见**。所以卸载必须自己长器官：
+把 MegaMoE 接进训练框架，核心是接好三层分工：框架管理并行网格、参数和梯度同步；dispatcher 翻译张量布局并持有运行时对象；MegaMoE 完成路由之后的 EP 通信与专家计算。
 
-- **pinned 主机缓冲池**（`MEGAMOE_FC1_OFFLOAD=1`）：前向结束把 fc1_output 挪到锁页主机内存，反向入口再搬回来；
-- **旁路 stream 搬运**：搬运和宿主的下一层计算并行，不占关键路径；
-- **为什么不能借框架的手**：一句话点透——
+DP 可以由框架层配置。同一批卡对普通参数做 DP/FSDP、对专家做 EP，是本章最关键的组合方式；若要让专家本身也有多份训练副本，再看 EDP 分组与通信会话是否支持。并行度之外，还要核对参数归属、梯度缩放和保存值的生命周期。
 
-```python
-# src/mega_moe/ops/function.py:111-115（摘）
-# Optional host swap of the ONE big saved activation: with
-# MEGAMOE_FC1_OFFLOAD=1 fc1_output moves to a pooled pinned host
-# buffer on a side stream (framework async_offload.py SwapTensor
-# idiom — the native saved dict is invisible to saved_tensors_hooks,
-# so the framework mechanism can't do this) ...
-```
+继续对照源码时，可以沿这条短路径阅读：
 
-**框架够不着的地方，算子自己长手。** 保存精度、主机卸载和选择性重算的适用条件及保存契约，见第八章；当前重算路径仍保存 FC1 输出。
+| 想确认的事情 | 源码入口 |
+|---|---|
+| 普通参数与专家参数怎样分组 | FSDPTurbo：`distributed/parallel_state.py::ParallelState` |
+| EP 参数怎样切分、forward 怎样替换 | FSDPTurbo：`distributed/expert_parallel/expert_parallel.py` |
+| session、布局变换和算子实例怎样衔接 | FSDPTurbo：`distributed/expert_parallel/dispatcher_megamoe_triton.py` |
+| 前反向接口与保存值 | Mega-MoE-TD：`src/mega_moe/ops/forward.py`、`function.py` |
+| 对称分配与元数据 workspace | Mega-MoE-TD：`src/mega_moe/runtime/workspace.py` |
 
-## 5.6 开发者注记（宿主接入入口）
-
-（给第三类读者）
-
-- 整网训练入口：Mega-MoE-TD `examples/kimi_k3/finetune_kimik3.sh`（经 MindSpeed-MM 的 `dispatcher: megamoe`）；
-- 融合反向的三项配置约束（`recompute` / `enable_activation_offload` / `megamoe_shared_op`）及原因见宿主仓 `examples/kimi_k3/README.md`——违反会在首个 backward 处失败。
-
-## 5.7 小结
-
-EP 与四维正交，mega_moe 是 EP 执行体；接入走 nn.Module → autograd.Function → 宿主 dispatcher 三层；使用者背三条纪律；算子自己管三本内存账（对称堆 / 常驻元数据 workspace / 大激活），卸载思想是"框架看不见的就自己长手"。**下一章抬头看硬件：NPU 和 GPU 的两套掩盖哲学；再往后是三章硬菜：负载均衡、重算、全局流水。**
+表中 FSDPTurbo 的路径均相对于 `FSDPTurbo_5387/fsdp_turbo/`。下一章转向硬件：同样希望让通信、访存与计算互相掩盖，NPU 和 GPU 为什么会选择不同的执行方式。
 
 ---
 
-← [上一章](04-comm-primitives.md) ｜ [返回目录](../README.md) ｜ [下一章：NPU 与 GPU](06-npu-vs-gpu.md) →
+← [上一章：通信基础](04-comm-primitives.md) ｜ [返回目录](../README.md) ｜ [下一章：NPU 与 GPU](06-npu-vs-gpu.md) →

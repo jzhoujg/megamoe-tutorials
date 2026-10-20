@@ -23,7 +23,7 @@
 | 二 | [经典结构：从 dispatch 到 combine，从前向到反向](chapters/02-dispatch-to-combine.md) | 前向是一条链，反向是一张网——每个 GEMM 裂成 dgrad 和 wgrad，反向计算量 ≈ 前向 × 2 | 入门主线 |
 | 三 | [通信与计算掩盖的艺术](chapters/03-mega-moe-td-walkthrough.md) | 掩盖五招：引擎分工、细粒度信号、双 buffer、影子流水、尾部填充 | 入门主线 |
 | 四 | [通信基础：从对称内存到 Triton custom op](chapters/04-comm-primitives.md) | 对称寻址与数据搬运 → 信号交接 → custom op 编译链；以 wait 的 IR 转换和设备轮询为例 | 入门 · 提高 |
-| 五 | [和 EP/DP/PP/TP 的关系，以及怎么接进框架](chapters/05-ep-and-framework.md) | EP 是第五个并行维度；nn.Module→autograd→宿主三层接入；算子自己的三本内存账与卸载思想 | 入门 · 提高 |
+| 五 | [和 EP/DP/PP/TP 的关系，以及怎么接进框架](chapters/05-ep-and-framework.md) | 框架配置 DP/FSDP，MegaMoE 执行 EP；普通参数与专家参数的分组、三层接口及内存归属 | 入门 · 提高 |
 | 六 | [NPU 和 GPU：两套硬件，两种掩盖哲学](chapters/06-npu-vs-gpu.md) | cv 融合与 SM/warp 分工两种代表设计；按阶段分析 vv 收益；NPU 亲和设计与“让 reduce 搭便车” | 入门 · 提高 |
 | 七 | [MoonEP：负载均衡为什么值得焊进大算子](chapters/07-moonep.md) | 木桶效应 → 副本式均衡（B.0–B.3）→ 规划/预取/归约全部 device 侧闭环 | 进阶 |
 | 八 | [省显存的艺术：重算怎么设计](chapters/08-recompute.md) | 保留路由快照与 FC1 输出，重建接收 token 和加权激活；保存精度、卸载与选择性重算的取舍 | 进阶 |
