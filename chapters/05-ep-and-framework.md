@@ -85,7 +85,7 @@ output.backward(dy)   # 自动进入 moe_backward_triton
 接口虽薄，纪律很硬，全部来自对称内存的物理约束：
 
 1. **single-in-flight**：算子实例的 workspace 是复用的，同一时刻只能有一个前向在飞。代码里有 owner/generation 双重门，反向开始前先验证 saved 没被下一轮前向覆写；
-2. **`peer_mem` 必须是会话的第一个对称分配**（heap offset 0）——`dl.symm_at` 只在 offset 0 才能正确解析（第四章的原语依赖这一点）；
+2. **`peer_mem` 必须是会话的第一个对称分配**（heap offset 0）——这是当前 Mega-MoE 接口保留的接入契约，不是对称内存模型的一般限制（见第四章 4.5）；
 3. **`state` 必须跨迭代复用**。docstring 写得很清楚：不带着 state 走，每步都重新分配对称信号槽（**对称堆泄漏**），而且届号归 1（旧信号残影会被读成新的——第四章讲过的正确性问题）。
 
 ```python

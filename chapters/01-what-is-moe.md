@@ -101,7 +101,7 @@ CaseGroup(                       # Kimi-K3
 
 **入门提高（第四、五、六章）——知道怎么接、怎么移植。**
 
-- **第四章《通信原语：signal / wait / epoch 的实现》**：put→fence→signal 的次序为什么不能乱、信号槽为什么要用单调届号防"残影"，以及 triton-distributed-ascend 怎么把 shmem 对称内存接进 Triton。想动手改 kernel 的读者必看；
+- **第四章《通信基础：从对称内存到 Triton custom op》**：先讲对称内存如何寻址、搬运和交接数据，再讲编译器怎样用 custom op 封装通信原语，最后沿着 wait 追到 IR 转换和设备轮询。想动手改 kernel 的读者必看；
 - **第五章《和 EP/DP/PP/TP 的关系，以及怎么接进框架》**：EP 是第五个并行维度；算子怎么从 nn.Module 一路接进 autograd 和宿主框架，算子自己的三本内存账与卸载思想；
 - **第六章《NPU 和 GPU：两套硬件，两种掩盖哲学》**：cv 融合 vs SM 班组制、vv 融合为什么上限不高（本质是 vector/cube 算力平衡）、NPU 的亲和设计。写 CUDA 的读者可以从这章找对照。
 
