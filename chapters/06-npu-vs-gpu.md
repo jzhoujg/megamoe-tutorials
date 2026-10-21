@@ -216,7 +216,7 @@ UniEP（HPDC'26）是把上述问题扩展到整层 MoE 的参考工作。本章
 
 读这类 kernel，可以沿着三条线走：**谁执行这段工作，哪次等待让它开始，哪次应答允许缓冲被覆盖。** cv 融合利用不同引擎的并行机会，vv 分工改善 vector 内部的任务分配，GPU 的 program/warp 分工则提供另一种资源组织方式。布局与批量处理能减少必须做的工作；阶段打点和 E2E 对照决定这些变化有没有缩短关键路径。
 
-本章的前向历史数据来自 `MOE_FWD_TIMING` 记录，工具入口见第九章 9.2/9.4；旁路 stream 的数字来自反向源码注释，两者不是同一套测量。第四章解释信号与可见性，第九章展开波流水。**下一章进入进阶篇：看 MoonEP 怎样把负载均衡接进大算子。**
+本章的前向历史数据来自 `MOE_FWD_TIMING` 记录，工具入口见第九章 9.3/9.4；旁路 stream 的数字来自反向源码注释，两者不是同一套测量。第四章解释信号与可见性，第九章展开波流水。**下一章进入进阶篇：看 MoonEP 怎样把负载均衡接进大算子。**
 
 源码阅读入口（按当前工作区相邻仓库布局链接）：[NPU 前向](../../Mega-MoE-TD/src/mega_moe/kernels/fused_forward.py)、[反向 stream 分支](../../Mega-MoE-TD/src/mega_moe/ops/backward.py)、[反向 dispatch 布局](../../Mega-MoE-TD/src/mega_moe/kernels/dispatch_fc2_bwd.py)、[MoonEP 块化规划](../../Mega-MoE-TD/src/mega_moe/kernels/moonep_planning.py)、[GPU 分工示例](../../Triton-distributed-ascend/python/triton_dist/kernels/nvidia/gemm_allreduce.py)、[GPU copy-engine 示例](../../Triton-distributed-ascend/python/triton_dist/kernels/nvidia/all_to_all_single_gemm.py)。
 

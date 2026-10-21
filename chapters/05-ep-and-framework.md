@@ -213,7 +213,7 @@ down_weight = _local_weight(self.down_proj).contiguous()
 |---|---|---|
 | 通信缓冲区 | token 接收区、路由权重、信号、可选的专家副本表 | 会话或算子 context 持有，在多次调用间复用 |
 | 常驻 workspace | 路由计数、桶偏移、token/route 索引、反向临时空间 | 算子和持久 `state` 持有；新一轮计算会复用其中一部分 |
-| 本次前向的保存值 | 路由快照、FC1 输出及反向需要的其他张量或引用 | `MegaMoEFunction` 的 autograd context 持有，供对应反向使用 |
+| 本次前向的保存值 | 路由快照、按保存策略保留的激活及反向所需引用（FC1 重算模式见第八章） | `MegaMoEFunction` 的 autograd context 持有，供对应反向使用 |
 
 这些是按用途分类，不意味着所有元数据都来自普通 PyTorch 分配；部分计数表本身也在对称堆里。
 

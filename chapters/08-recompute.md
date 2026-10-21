@@ -1,117 +1,149 @@
-# 第八章｜省显存的艺术：重算怎么设计
+# 第八章｜省显存的艺术：从选择性重算到 FC1 重算
 
 > **进阶篇 2/3** ｜ [返回目录](../README.md)
 
-**一句话：反向需要前向的“小票”，重算是在决定哪些可以重新补打。本库保留路由快照与 FC1 输出，在反向中重建接收 token 和加权激活，用额外通信及逐元素计算换取保存空间。**
+**一句话：反向需要前向的数据，但不一定要让这些数据一直留在显存里。旧方案保留或卸载 FC1 输出，重建接收 token 和加权激活；新方案进一步在反向重算 FC1，用额外 GEMM 换掉激活保存与主机往返。**
 
-## 8.1 矛盾
+## 8.1 先看要保存什么
 
-第二章说过，反向要吃前向的一堆中间量：dispatch 后的 token、FC1 输出、路由元数据……`_native_saved.py` 里的完整契约有 39 个键。Kimi-K3 规模下，光 fc1_output 一项就是几百 MB 每层——几十层 MoE 堆起来，显存直接判死刑。
+第二章说过，反向需要 dispatch 后的 token、FC1 输出、加权激活和路由元数据。大矩阵如果从前向一直保存到反向，多层叠加后就可能成为显存瓶颈。Activation checkpointing（激活检查点）的基本思路是只保存部分数据，其余在反向需要时重建；具体到 MoE，既可能重新计算，也可能重新通信。
 
-经典的解法叫 activation checkpointing（梯度检查点）：前向只存关键帧，反向要用时重算。MoE 的重算有自己的特殊性，设计成三问。
+本章先用本教程主体依据的 `release_v4` 解释选择性重算，再看新分支为什么把 FC1 也纳入重算。新方案以本地可见的 **`origin/main@554db9a`（2026-10-19）** 为准：FC1 重算由 `b894064` 引入，`23ebea9` 于 10 月 17 日将其设为支持路径下的默认行为。
 
-## 8.2 第一问：什么能重算？
+### 四个 token：哪些数据跨越前向与反向？
 
-**激活在数学上可以重算。** 输入、权重和路由一致时，FC1 输出可以重新执行 GEMM 得到，加权 SwiGLU 可以由 FC1 输出和路由权重得到。接收 token 也能重建：拿着原始 `hidden_states` 和保存的排列表，再 dispatch 一遍。当前 `MOE_SAVED_RECOMPUTE=1` 选择后两项，仍然保存 FC1 输出，并没有重跑 FC1 GEMM（8.5 展开）。
+沿用[第二章的小例子](02-dispatch-to-combine.md)：全网 4 个 token 展开为 8 条路由，H=F=2。下表列的是全网逻辑形状，各 rank 只持有自己需要的部分。
 
-## 8.3 第二问：为什么保留排列元数据？
+| 数据 | 形状 / 内容 | 旧版选择性重算 | 新版增加 FC1 重算后 |
+|---|---|---|---|
+| 原始输入 x | `[4,2]` | 保留 | 保留 |
+| 专家选择、路由权重 p | 各 `[4,2]` | 保留相关输入 / 快照 | 保留相关输入 / 快照 |
+| 排列与接收布局 | order=`[0,4,2,6,1,3,5,7]` 等 | 保留；MoonEP 还需副本映射 | 保留相同映射 |
+| 接收 token X_recv | `[8,2]` | 反向重新 dispatch | 反向重新 dispatch |
+| FC1 输出 Y | `[8,4]` | 保存，可压缩或卸载 | 反向重新执行 FC1 GEMM |
+| 加权激活 A | `[8,2]` | 从保存的 Y 和 p 重建 | 从重算的 Y 和 p 重建 |
 
-**本实现选择保存排列元数据，避免重复规划并保证行身份一致。** 固定输入和排序规则的稳定排序可以重现，并非天然随机；如果路由选择、同分处理、物理分配规则都确定，元数据在原理上也可以重建。但若重新规划改变了行顺序，却仍使用旧顺序保存的 FC1 输出或权重，梯度就会配错 token。要重建，就必须恢复相同映射，或一致地重排所有关联数据。
+以 e2 的两行为例，重新发送 token 0、1 可以恢复 X_recv。旧方案直接读取保存的 Y，再算 `silu(gate) * up * [0.25,0.40]` 得到 A；新方案先计算 `Y = X_recv @ W1`，再恢复 A。这里的 W1 是 gate/up 拼接后的专家权重，计算时必须使用与该次前向对应的参数。
 
-当前方案保留计数、偏移、排列及副本映射的快照，收益是省去再次规划与验证的复杂度。这些表通常比大激活小，但它们同样占用内存，规模大时也应计入预算：
+[CPU 小实验](../examples/README.md) 验证的是旧版选择性重算：重建 X_recv 和 A，不重跑 FC1。它用于核对数据关系，不模拟新分支的设备调度，也不测通信或显存收益。
 
-```python
-# src/mega_moe/ops/_native_saved.py:312-319（摘）
-def snapshot_plan_metadata(op, plan: MoERoutingPlan) -> dict:
-    """T1 — snapshot one routing plan for the native ``saved`` dict.
+## 8.2 旧方案为什么保留 FC1？
 
-    Must run immediately after ``build_routing_plan`` returned ...
-    Every returned tensor is a clone or a freshly computed value, so the
-    single-in-flight planning workspace may be reused afterwards.
-    """
-```
+在输入、参数、路由与激活配置一致的前提下，这三项都可以重建。但它们的代价不同：
 
-## 8.4 第三问：什么时候存、存多久？
-
-存激活有个**时间窗**问题。以多 kernel 的 native-saved 路径为例，dispatch 接收区会被后续阶段复用，必须在 FC2 回传覆写之前捕获反向所需的激活：
-
-```python
-# src/mega_moe/ops/_native_saved.py:336-345（摘）
-def capture_activations(op, dispatch_result, workspace=None):
-    """T2 — snapshot the forward activations the backward needs.
-
-    Call site: inside ``FusedMoEForward.forward`` between the ``dispatch_fc1``
-    result and the ``_fc2_combine_shadow_activation`` launch. ... this window
-    is mandatory because FC2's device-put workers and backward step 1 both
-    overwrite the peer-memory receive view.
-    """
-```
-
-T1（规划快照）→ T2（激活捕获，必须在 FC2 覆写之前）→ T3（组装 39 键 saved）——三段式，一步都不能错位。
-
-## 8.5 重算路径：最小 saved 契约
-
-单 kernel 前向 + 融合反向的选择性重算组合下，保存 FC1 输出、路由权重与布局快照，并保留原始 `hidden_states`；扩展后的接收 token 矩阵和加权激活在反向 kernel 内重建。下面只是允许省略部分激活的准入判断，不是完整 saved 字段清单：
-
-```python
-# src/mega_moe/ops/backward.py:123-143（摘）
-# Single-kernel-forward minimal contract: the big activations are
-# NOT saved — the fused mega backward re-derives them in-launch
-# (recv_hidden via re-dispatch, act rows from fc1_output).  Only
-# that one combination may run without recv_hidden_sorted ...
-_single_kernel_recompute = (
-    "recv_counts_by_source_expert" in saved
-    and "fc1_output" in saved
-    and "recv_weights_sorted" in saved
-    and os.environ.get("MOE_BWD_MEGA") == "1"
-    and os.environ.get("MOE_SAVED_RECOMPUTE", "0") == "1"
-)
-```
-
-`mega_bwd.py` 的重算说明明确写着 **“fc1_output is NOT recomputed”**。`recv_hidden_sorted` 用 re-dispatch 补回，`swiglu_out_weighted` 从保存的 FC1 输出重新做 SwiGLU 与逐行加权。增量工作是一遍 token 分发，以及逐元素激活、乘法和相应访存；不额外执行 FC1 GEMM。反向原本需要的四个梯度 GEMM 仍正常执行。
-
-### 四个 token：究竟留下哪些“小票”？
-
-沿用 [第二章的小例子](02-dispatch-to-combine.md)：全网 4 个 token 展开成 8 条路由，H=F=2。下面按全网逻辑形状列账，各 rank 只持有自己需要的部分：
-
-| 数据 | 形状 / 内容 | 当前选择性重算的做法 |
+| 重建对象 | 需要做的工作 | 主要消耗 |
 |---|---|---|
-| 原始输入 x | `[4,2]` | 保留，各来源 rank 保存自己的两行 |
-| 专家选择、路由权重 | 各 `[4,2]` | 保留路由相关输入 / 快照 |
-| 排列和接收布局 | order=`[0,4,2,6,1,3,5,7]` 等 | 保留；有副本时还需物理映射 |
-| FC1 输出 Y | `[8,4]` | 保存，可按配置压缩或卸载 |
-| 接收 token X_recv | `[8,2]` | 反向按原映射重新分发 x |
-| 加权激活 A | `[8,2]` | 从保存的 Y 和对应权重逐行重建 |
+| X_recv | 按原映射再次分发 x | 通信带宽、搬运和就绪同步 |
+| Y | 执行 FC1 的 gate/up GEMM | cube 算力、权重与输入访存 |
+| A | 对 Y 做激活、逐元素乘法及路由加权 | vector 算力与访存 |
 
-例如 e2 的接收行仍须对应 token 0、1；从原始输入重发这两行，就恢复了它的 X_recv。用已经保存的两行 Y 做 `silu(gate) * up * [0.25,0.40]`，就恢复了 A。**这里没有再算 `X_recv @ W1`。** [CPU 小实验](../examples/README.md) 会逐项核对重建值；它模拟数据关系，不测真实通信或设备显存。
+旧方案先选择重建 X_recv 和 A，因此**不增加 FC1 GEMM**。它还有一个调度上的好处：Y 已经存在，A 可以在反向 P1 的 vector 窗口重建；X_recv 主要供后续 FC1 wgrad 使用，可以更晚重发，放在 B2→B3 的窗口里，与 FC1 dgrad 的 cube 计算重叠。
 
-省下的是前向到反向之间持续保存这些展开激活的成本，不是让反向完全不需要它们。还要计入重建工作区、原始输入和存活重叠，才能得到整网峰值显存的净变化。
+这解释了旧方案为什么先保留 Y，但不能据此断言保存永远更便宜。Y 的长期占用依然存在；把它卸载到主机，又会引入设备到主机（D2H）和主机到设备（H2D）的往返。新方案正是重新比较了这两笔成本。
 
-![重算路径与内存账](../pic/recompute.png)
+## 8.3 为什么从 FC1 offload 转向全部重算？
 
-*图中反向主线照常执行，接收 token 和加权激活从保存的数据补回。右侧是特定形状下的示意账，不能直接套用到四 token 例子或其他模型；FC1 输出、输入 token、路由元数据应分别计量，FP8 保存还需计入 scale。*
+### 卸载降低了常驻占用，却保留了搬运成本
 
-## 8.6 三种省显存手段
+FC1 offload 的路径是：前向保存 Y → 搬到 pinned 主机内存 → 反向前搬回设备。除了传输字节数，还要安排拷贝 stream、事件等待、pinned buffer 的复用与释放。异步发起拷贝，也不保证它能在消费者需要数据之前完成。
 
-压缩、卸载和选择性重算作用于不同数据，可以按支持条件组合；它们的实际代价没有固定的高低顺序：
+这条路径曾做过几轮优化：只搬有效行、把 H2D 提前到 attention backward 窗口，以及用设备进度信号让 D2H 尽早开始。其中 2026-10-17 的一项分块 D2H 探针发现，发布点已接近最后一波 FC1，剩余 combine/output 尾部不足以覆盖拷贝：该用例的 D2H 滞后只从 1.929 降到 1.892 ms，约改善 1.9%。这是 Kimi-K3 E32-K8、w4、S=1024、30 次前向循环的局部结果（提交 `2e3a472`），不能当作整网收益。
 
-1. **选择保存精度**：`save_fc1_dtype` 支持 bf16、fp16 和 fp8。FP8 使用 E4M3 + 逐行/逐组 scale，相比 16 位保存，数据主体约省一半；fp16 和 bf16 都是两字节，彼此切换并不减半内存。压缩还需评估梯度误差；
-2. **搬主机**：`MEGAMOE_FC1_OFFLOAD=1` 把 fc1_output 挪到 pinned 主机内存，反向入口再搬回来——把仓库从显存这块黄金地段搬去郊区（代码思想见第五章 5.5）；
-3. **选择性重算**：`MOE_SAVED_RECOMPUTE=1`，重建接收 token 和加权激活，保留 FC1 输出，如上。
+这也说明，瓶颈可能是**可用的重叠窗口太短**。如果继续优化拷贝仍有明显暴露时间，就值得尝试不保存这份数据，反向直接算出来。
 
-**为什么说重算本质是 trade-off？** re-dispatch 消耗通信带宽，激活重建消耗 vector 算力和访存；若这些工作能落进现有 GEMM 的空闲窗口，增量墙钟可能小于它们独立运行的时间。释放的保存空间又可能允许更大的 batch 或更长序列。所以应一起测峰值显存、单步耗时和整网吞吐，再决定怎么兑换，不能仅凭“显存够不够”判断是否值得。
+### 新方案怎样接进反向？
 
-## 8.7 开发者注记（开关速查）
+新版在同一次融合反向 launch 内重建 Y。与旧方案相比，它不仅多了一次 GEMM，还调整了依赖顺序：
 
-（给第三类读者）
+1. **P1 窗口提前重发 x。** 先发出输出梯度，解锁 FC2 dgrad 的计算，再由 vector 子核重发原始输入；B1 发布重发结果。
+2. **B1 后增加 WR 计算窗口。** cube 用 X_recv 和对应的 home/replica gate/up 权重重算 Y，完成后通过 barrier 发布。
+3. **增加 WA 激活窗口。** vector 从新的 Y 重建 A，再通过 barrier 发布，之后 P2/P3 等梯度计算继续。
 
-- `MEGAMOE_FC1_OFFLOAD=1`：fc1_output 搬主机（pinned 池 + 旁路 stream）；
-- `MOE_SAVED_RECOMPUTE=1`：上述选择性重算，必须与 `MOE_BWD_MEGA=1` **同开**，并满足 saved 契约；
-- `save_fc1_dtype`：通过 `MoEForwardConfig(save_fc1_dtype=...)` 传入，选择 `bf16` / `fp16` / `fp8` 保存。
+![旧版选择性重算与新版 FC1 重算的数据依赖](../pic/recompute-paths.png)
 
-## 8.8 小结
+*蓝色表示跨越前向与反向保留的数据，橙色表示反向重建。图展示数据依赖，不表示耗时比例；Y 供激活反向使用，A 供 FC2 wgrad 使用，X_recv 供 FC1 wgrad 使用。*
 
-当前方案保留 FC1 输出和路由快照，重建接收 token 与加权激活；保存时要赶在接收区被复用之前。元数据能否重建取决于映射的可重现性，当前实现选择存下来。保存精度、主机卸载和选择性重算共同提供空间与时间的取舍。**最后一章，讲前向的全局流水与反向的相位制选择。**
+新增的 FC1 GEMM 与 FC2 dgrad 共用 cube，WR/WA 也引入了发布屏障，因此不能把重算说成“全部藏进空闲窗口”。新方案节省的是 Y 的长期保存、保存写出及主机往返，代价是反向计算、同步和临时工作区。
+
+这里的“全部重算”指 **X_recv、Y、A 这三项主要展开激活都在反向重建**。原始输入、路由权重、排列及副本映射仍需保留；不重新执行 router 的专家选择，也不重跑 FC2 前向。这与框架把整个 MoE 层重新前向一次的 checkpoint 是不同的实现，不能直接互换。
+
+### 同组实测支持了什么取舍？
+
+提交 [`b894064`](https://gitcode.com/jzhoujg/Mega-MoE-TD/commit/b894064d9f80bc068eba9d44a0047853132b491e) 记录了 2026-10-17 的 DeepSeekV4 demo 整网对照：8×950DT、10 steps。对应 demo 为 4 层、64 专家、top-k=8、H=4096、F=2048、seq=1024、micro-batch=4；下表沿用该提交报告的稳态时间与峰值显存口径。
+
+| FC1 获取方式 | 稳态时间（s/step） | 比常驻保存多耗时 | 峰值显存 |
+|---|---:|---:|---|
+| 常驻设备保存 | 0.4659 | — | 基线 |
+| 主机 offload | 0.5305 | 64.6 ms | 24.43 GB，较基线约少 2.0 GB |
+| offload + G3 v1 分块 D2H | 0.5243 | 58.4 ms | 该提交未单列 |
+| 反向重算 FC1 | 0.4855 | 19.6 ms | 24.43 GB，与 offload 相同 |
+
+在这组配置下，**重算保留了 offload 的显存收益，同时每步少用约 45 ms（约 8.5%）**；相对常驻保存的增量时间约为 offload 的三成。但常驻保存仍然更快，所以取舍是用约 20 ms/step 换约 2 GB 峰值空间，而不是重算无条件提速。
+
+这些数值来自历史提交记录，本教程未重新跑真机；该记录没有附出完整原始样本和误差范围。提交还报告了 w2/w4/w8 功能验证通过，以及该整网测试的 grad norm 与基线逐步逐位一致；这不能代替其他形状、保存精度和工具链上的正确性与性能验证。
+
+因此，`23ebea9` 将 FC1 重算设为支持路径的默认，并保留 offload 与常驻保存供对照。切换默认依据的是这组空间与时间的实测权衡：当主机链路和可用重叠窗口受限时，在设备上重建 Y 更划算；若计算资源或通信条件不同，结论仍需重测。
+
+## 8.4 内存账：少保存，不等于反向不再占空间
+
+设每个 rank 有 T 个原始 token，实际接收 M 条路由，H 为 hidden size、F 为 FFN 中间维。只计 BF16 数据主体，不计 padding、额外副本、元数据和 allocator 开销：
+
+| 数据 | 形状 | 字节数 | T=2048、M=T·16、H=3584、F=3072 |
+|---|---|---:|---:|
+| 原始输入 x | `[T,H]` | 2TH | 14 MiB |
+| 接收 token X_recv | `[M,H]` | 2MH | 224 MiB |
+| FC1 输出 Y | `[M,2F]` | 4MF | 384 MiB |
+| 加权激活 A | `[M,F]` | 2MF | 192 MiB |
+
+旧方案避免长期保存 X_recv 和 A 的逻辑数据量是 416 MiB；新版进一步避免长期保存 Y 的 384 MiB。这里按每 rank、单层、指定 M 计算，实际偏斜或 padding 会改变 M 和分配大小。
+
+反向仍然需要这些数据。新版会为重算 Y 分配 `[M,2F]` 的 BF16 工作区；X_recv 和 A 也有重建落点。因此应沿时间轴统计哪些张量同时存活，才能得到整网峰值。上面的逻辑数据量不能直接相加成峰值节省，也不能替代 8.3 的实测。
+
+保存模式下，还可以用 `save_fc1_dtype` 选择 bf16、fp16 或 fp8。FP8 E4M3 的 Y 数据主体约减半，另需逐行、逐组 scale，并应评估梯度误差；fp16 和 bf16 都是两字节，互换不减少字节数。**新版 FC1 重算输出为 BF16，不经过 FC1 的 FP8 保存格式**，不要把“FP8 保存再减半”重复计入重算模式的收益。
+
+## 8.5 为什么路由快照仍要留，什么时候捕获？
+
+重算必须恢复同一条路由的行身份。固定输入和排序规则的稳定排序可以重现；若选择、同分处理和物理分配规则全部确定，元数据原则上也能重建。但重新规划若改变行顺序，就必须同步重排所有关联数据，否则激活或梯度会配错 token。
+
+当前两种方案都保留计数、偏移、排列及副本映射，省去再次规划与验证的复杂度。MoonEP 下尤其要知道某条路由当时交给了哪个物理专家槽。元数据通常小于大激活，但仍须计入内存预算。
+
+还有一个生命周期问题：**保存的是独立快照，还是会被后续步骤覆写的工作区视图？** 以多 kernel 的 native-saved 路径为例，规划工作区可能被下一次调用复用，接收区又会被 FC2 回传覆写，所以顺序应当是：
+
+```text
+规划完成 → 立即捕获布局快照
+         → dispatch / FC1
+         → 捕获需要保存的接收激活
+         → FC2 回传复用接收区
+```
+
+选择重算后可以省去相应激活的保存，但输入和路由快照仍需存活到反向消费完毕。主机卸载还必须保证 D2H 完成前源数据有效、H2D 完成后消费者才能读；这也是 offload 除带宽之外的工程成本。
+
+## 8.6 开发者注记：版本、开关与验证入口
+
+新版统一通过 `runtime/fc1_mode.py::fc1_recompute_default()` 决定 FC1 的获取方式。以下对照针对**单 kernel 前向 + 融合反向**，且已开启 `MOE_BWD_MEGA=1`、`MOE_SAVED_RECOMPUTE=1`：
+
+| `MEGAMOE_BWD_FC1_RECOMPUTE` | `MEGAMOE_FC1_OFFLOAD` | FC1 获取方式 |
+|---|---|---|
+| 未设置 | 未设置或 0 | 默认重算 |
+| 未设置 | 1 | 保存并卸载到主机 |
+| 1 | 任意 | 显式重算优先，无 FC1 保存数据可卸载 |
+| 0 | 未设置或 0 | 常驻设备保存 |
+| 0 | 1 | 保存并卸载到主机 |
+
+因此，要回退到常驻保存，既要关闭 FC1 重算，也要关闭 offload。支持条件以调用路径与该函数为准，不能只向任意算子设置一个环境变量。
+
+阅读源码时可沿下面几个入口核对：
+
+- `ops/forward.py`：`save_fc1_for_bwd = return_saved and not _fc1_recompute` 控制是否为反向保存 FC1。
+- `ops/_single_saved_adapter.py` 与 `ops/backward.py`：重算模式允许 saved 中没有 `fc1_output`，仍检查必要的路由数据。
+- `kernels/mega_bwd.py`：`FC1_RECOMPUTE` 分支安排提前 re-dispatch、WR GEMM 和 WA 激活重建。
+- `ops/_native_saved.py`：多 kernel 路径的 `snapshot_plan_metadata`、`capture_activations`、`assemble_native_saved` 对应布局快照、激活捕获和契约组装。文件中“39 键”描述的是早期参考契约，不是所有路径必须保存的固定数量。
+
+评估时同时记录正确性、峰值显存、单步耗时和整网吞吐。释放空间可能允许更大 batch 或更长序列，这时需要在目标工作负载上重新比较，不能仅凭单层重算耗时判断最终收益。
+
+## 8.7 小结
+
+重算设计要同时回答三件事：哪些数据可以恢复、恢复成本落在哪些资源上、哪些数据仍要跨阶段保存。旧方案用 re-dispatch 和激活重建降低保存量；新版再用一次 FC1 GEMM 替代 Y 的长期保存与主机往返。路由身份和生命周期始终是正确性的前提。**最后一章把这些依赖放回全局调度，解释前向波流水与反向相位制的选择。**
 
 ---
 

@@ -195,7 +195,7 @@ BF16 token 接收区的字节数就是 `ceil(T·k·cf) × H × 2`。例如 `T=20
 
 这只是 `peer_mem`，还不包含 routing weights、信号、元数据和反向 workspace。各 rank 都要分配同尺寸的对称对象，因此很热的一个 rank 会抬高所有 rank 的预留预算。
 
-当前 `config.py::resolved_receive_capacity_factor` 对普通 EP 默认返回 `W`；开启 MoonEP 时默认返回 `2.0`，还考虑了反向 wgrad 的 padding 空间。不能只凭前向均衡到 `T·k`，就推断整套训练 workspace 的默认 cf 应该是 1。
+本章依据的 `release_v4` 中，`config.py::resolved_receive_capacity_factor` 对普通 EP 默认返回 `W`；开启 MoonEP 时默认返回 `2.0`，还考虑了反向 wgrad 的 padding 空间。不能只凭前向均衡到 `T·k`，就推断整套训练 workspace 的默认 cf 应该是 1。新主线 improved-v2 的容量变化见第七章 7.5。
 
 这里的 cf 控制接收区容量，dropless 路径不会把超额路由静默丢掉。分阶段 host 路径在 `runtime/routing.py::build_routing_plan` 中检查实际所需容量，不足就报错；单 kernel 路径还需要自己的容量检查。减少 cf 之前，既要看路由负载，也要看整个前反向实现的空间需求。
 

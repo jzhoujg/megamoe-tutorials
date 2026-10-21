@@ -12,6 +12,7 @@
 
 - **前六章是入门主线**，前三章尤其适合第一类读者，建议顺序读完。我会按照"Mega-MoE 为什么被需要、由什么组成，以及最基本的'压箱技'——通算掩盖——是怎么设计的"来展开；第四章到第六章稍微做了一些扩展，依次讲底层接入（通信原语）、框架层接入、硬件特性对比（NPU 和 GPU），可以作为知识提高。
 - **第七章起各自独立**，是进阶内容，按需取用：MoonEP 负载均衡、重算算子、全局流水等话题都在这里讨论；
+- 教程主体依据 `release_v4`；第七、八章另标注 `origin/main@554db9a`（2026-10-19）的规划与 FC1 重算变化，新旧默认值按各节的版本说明区分。
 - 正文的源码摘录标注 `文件:行号`（行号随仓库演进会漂移，**以函数名为准**），可以当伪代码看——看懂结构和数据流比抠语法重要一百倍。教学小例子则单独放在 `examples/`。
 - **想动手验证，先跑 [四个 token 的 CPU 小实验](examples/README.md)**：全局 4 个 token、4 个专家、top-2、2 个模拟 rank。第二、三、四、七、八章沿用这组数据，串起路由布局、tile 就绪、信号槽、副本分担和选择性重算。示例使用 PyTorch，不需要 NPU。
 
@@ -26,7 +27,7 @@
 | 五 | [和 EP/DP/PP/TP 的关系，以及怎么接进框架](chapters/05-ep-and-framework.md) | 框架配置 DP/FSDP，MegaMoE 执行 EP；普通参数与专家参数的分组、三层接口及内存归属 | 入门 · 提高 |
 | 六 | [NPU 和 GPU：两套硬件，两种掩盖哲学](chapters/06-npu-vs-gpu.md) | 从真实代码看 cv 双缓冲与 GPU worker 分工；按关键路径分析 vv、路由布局和 UB 预算 | 入门 · 提高 |
 | 七 | [MoonEP：负载均衡为什么值得焊进大算子](chapters/07-moonep.md) | 木桶效应 → 副本式均衡（B.0–B.3）→ 规划/预取/归约全部 device 侧闭环 | 进阶 |
-| 八 | [省显存的艺术：重算怎么设计](chapters/08-recompute.md) | 保留路由快照与 FC1 输出，重建接收 token 和加权激活；保存精度、卸载与选择性重算的取舍 | 进阶 |
+| 八 | [省显存的艺术：从选择性重算到 FC1 重算](chapters/08-recompute.md) | 从保留或卸载 FC1 输出到反向重算 FC1；比较激活保存、通信、计算与峰值显存 | 进阶 |
 | 九 | [前向的全局流水，以及反向的相位制选择](chapters/09-global-pipeline.md) | 前向三级波流水；反向依赖网也可流水化，当前以相位制为骨架并探索局部流水 | 进阶 · 压轴 |
 
 ## 参考资料
@@ -40,11 +41,11 @@
 
 ## 待补清单（v0.1 → v0.2）
 
-- [x] 各章插图（第一批已补，见 `pic/`）：transformer block 图（一章 1.1，SVG 源件 `pic/transformer-block.svg`）、通算重叠图（三章 3.1，SVG 源件 `pic/comm-comp-overlap.svg`）、前向算子链全景（二章 2.1 / 三章 3.3，SVG 源件 `pic/forward-design.svg`）、all-to-all 全景（二章 2.3，SVG 源件 `pic/all2all-dispatch.svg`）、反向算子链全景（二章 2.8，SVG 源件 `pic/backward-design.svg`）、前向三车道甘特图（九章 9.1）、规划与预取车道图（七章 7.6）、重算路径与内存账（八章 8.5）
+- [x] 各章插图（第一批已补，见 `pic/`）：transformer block 图（一章 1.1，SVG 源件 `pic/transformer-block.svg`）、通算重叠图（三章 3.1，SVG 源件 `pic/comm-comp-overlap.svg`）、前向算子链全景（二章 2.1 / 三章 3.3，SVG 源件 `pic/forward-design.svg`）、all-to-all 全景（二章 2.3，SVG 源件 `pic/all2all-dispatch.svg`）、反向算子链全景（二章 2.8，SVG 源件 `pic/backward-design.svg`）、三波前向迭代图（九章 9.1，`pic/forward-waves.svg`）、MoonEP 依赖与重叠窗口（七章 7.4，`pic/moonep-overlap.svg`）、新旧重算路径与内存账（八章 8.3/8.4，`pic/recompute-paths.svg`）
 - [x] 第三章前向/反向模块粒度流水图（三章 3.3 / 3.4，SVG 源件 `pic/forward-pipeline-simple.svg`、`pic/backward-pipeline-simple.svg`）
 - [ ] 插图待补（第二批）：带实测相位数据的反向流水甘特图
 - [ ] 第七章 MoonEP 实测数字：跑 `moonep-skewed` 配对用例（trimmed-skewed vs skewed，开/关 MoonEP 对照）后填入
 - [ ] 第二章 2.9 的回转置数字（9.6 / 3.98 / 4.5 ms）与第三章 3.6 的反向打点表：补录测试配置与日期，补录时一并校准行项（分阶段打点约数）与 E2E（端到端实测）的口径差异
 - [x] 第六章 GPU 侧补入 Triton-distributed 的 GEMM + all-reduce 分工及 copy-engine 对照；UniEP 保留论文层面指引
-- [ ] 第九章补一次真实相位打点数据表的完整示例
+- [ ] 第九章补一次真实相位打点数据表的完整示例（9.3 已有构造数据的读数示范，尚待真机原始数据）
 - [ ] 术语表与"进一步阅读"分章链接（视读者反馈决定是否加附录）
