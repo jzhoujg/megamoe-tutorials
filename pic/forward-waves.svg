@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="510" viewBox="0 0 1200 510" role="img" aria-labelledby="title desc">
+<title id="title">三波前向流水的逻辑迭代</title><desc id="desc">预发 w0 w1，step 1 派发 w2。FC1、FC2、回传依次错开一轮，step 3 和 4 排空。</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#475569"/></marker></defs>
+<rect width="100%" height="100%" fill="#fff"/>
+<g font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" fill="#172b4d">
+<text x="30" y="36" font-size="25" font-weight="600" text-anchor="start">三波前向：启动、推进、排空</text>
+<text x="30" y="67" font-size="17" font-weight="400" text-anchor="start">横轴为逻辑迭代；同列任务共享 cube / vector 资源，不表示独立引擎同时执行</text>
+<text x="380" y="115" font-size="20" font-weight="600" text-anchor="middle">step 0</text>
+<text x="540" y="115" font-size="20" font-weight="600" text-anchor="middle">step 1</text>
+<text x="700" y="115" font-size="20" font-weight="600" text-anchor="middle">step 2</text>
+<text x="860" y="115" font-size="20" font-weight="600" text-anchor="middle">step 3</text>
+<text x="860" y="140" font-size="16" font-weight="400" text-anchor="middle">排空</text>
+<text x="1020" y="115" font-size="20" font-weight="600" text-anchor="middle">step 4</text>
+<text x="1020" y="140" font-size="16" font-weight="400" text-anchor="middle">排空</text>
+<text x="30" y="197" font-size="20" font-weight="600" text-anchor="start">dispatch（vector）</text>
+<text x="380" y="197" font-size="20" font-weight="400" text-anchor="middle">—</text>
+<rect x="470" y="165" width="140" height="48" rx="10" fill="#fff3e0" stroke="#e7ad57"/>
+<text x="540.0" y="195.0" font-size="18" font-weight="600" text-anchor="middle">w2</text>
+<text x="700" y="197" font-size="20" font-weight="400" text-anchor="middle">—</text>
+<text x="860" y="197" font-size="20" font-weight="400" text-anchor="middle">—</text>
+<text x="1020" y="197" font-size="20" font-weight="400" text-anchor="middle">—</text>
+<text x="30" y="262" font-size="20" font-weight="600" text-anchor="start">FC1 + 激活</text>
+<rect x="310" y="230" width="140" height="48" rx="10" fill="#eaf2ff" stroke="#90b4e8"/>
+<text x="380.0" y="260.0" font-size="18" font-weight="600" text-anchor="middle">w0</text>
+<rect x="470" y="230" width="140" height="48" rx="10" fill="#eaf8ef" stroke="#8ec7a3"/>
+<text x="540.0" y="260.0" font-size="18" font-weight="600" text-anchor="middle">w1</text>
+<rect x="630" y="230" width="140" height="48" rx="10" fill="#fff3e0" stroke="#e7ad57"/>
+<text x="700.0" y="260.0" font-size="18" font-weight="600" text-anchor="middle">w2</text>
+<text x="860" y="262" font-size="20" font-weight="400" text-anchor="middle">—</text>
+<text x="1020" y="262" font-size="20" font-weight="400" text-anchor="middle">—</text>
+<text x="30" y="327" font-size="20" font-weight="600" text-anchor="start">FC2（cube）</text>
+<text x="380" y="327" font-size="20" font-weight="400" text-anchor="middle">—</text>
+<rect x="470" y="295" width="140" height="48" rx="10" fill="#eaf2ff" stroke="#90b4e8"/>
+<text x="540.0" y="325.0" font-size="18" font-weight="600" text-anchor="middle">w0</text>
+<rect x="630" y="295" width="140" height="48" rx="10" fill="#eaf8ef" stroke="#8ec7a3"/>
+<text x="700.0" y="325.0" font-size="18" font-weight="600" text-anchor="middle">w1</text>
+<rect x="790" y="295" width="140" height="48" rx="10" fill="#fff3e0" stroke="#e7ad57"/>
+<text x="860.0" y="325.0" font-size="18" font-weight="600" text-anchor="middle">w2</text>
+<text x="1020" y="327" font-size="20" font-weight="400" text-anchor="middle">—</text>
+<text x="30" y="392" font-size="20" font-weight="600" text-anchor="start">回传（vector）</text>
+<text x="380" y="392" font-size="20" font-weight="400" text-anchor="middle">—</text>
+<text x="540" y="392" font-size="20" font-weight="400" text-anchor="middle">—</text>
+<rect x="630" y="360" width="140" height="48" rx="10" fill="#eaf2ff" stroke="#90b4e8"/>
+<text x="700.0" y="390.0" font-size="18" font-weight="600" text-anchor="middle">w0</text>
+<rect x="790" y="360" width="140" height="48" rx="10" fill="#eaf8ef" stroke="#8ec7a3"/>
+<text x="860.0" y="390.0" font-size="18" font-weight="600" text-anchor="middle">w1</text>
+<rect x="950" y="360" width="140" height="48" rx="10" fill="#fff3e0" stroke="#e7ad57"/>
+<text x="1020.0" y="390.0" font-size="18" font-weight="600" text-anchor="middle">w2</text>
+<text x="30" y="450" font-size="19" font-weight="400" text-anchor="start">循环前：lane 1 预发 w0 / w1。循环后：等待回传到齐，再做 top-k 归约。</text>
+<text x="30" y="481" font-size="17" font-weight="400" text-anchor="start">三级 = FC1 + 激活 → FC2 → 回传；dispatch 提前供数。图示 rank 的 local_waves = global_waves = 3。</text>
+</g></svg>

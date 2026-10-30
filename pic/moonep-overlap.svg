@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="460" viewBox="0 0 1200 460" role="img" aria-labelledby="title desc">
+<title id="title">MoonEP 的依赖与可重叠窗口</title><desc id="desc">规划确定副本与路由；FC1 等待 token 和 gate/up 权重，FC2 等待激活与 down 权重。</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#475569"/></marker></defs>
+<rect width="100%" height="100%" fill="#fff"/>
+<g font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" fill="#172b4d">
+<text x="30" y="36" font-size="25" font-weight="600" text-anchor="start">MoonEP：消费者只等待自己所需的数据与权重</text>
+<text x="30" y="66" font-size="17" font-weight="400" text-anchor="start">依赖图；方框宽度不表示耗时</text>
+<rect x="30" y="185" width="180" height="90" rx="10" fill="#eaf2ff" stroke="#90b4e8"/>
+<text x="120.0" y="223.5" font-size="18" font-weight="600" text-anchor="middle">设备规划</text>
+<text x="120.0" y="248.5" font-size="18" font-weight="400" text-anchor="middle">路由与副本表</text>
+<rect x="280" y="100" width="190" height="70" rx="10" fill="#eaf2ff" stroke="#90b4e8"/>
+<text x="375.0" y="141.0" font-size="18" font-weight="600" text-anchor="middle">gate/up 权重预取</text>
+<rect x="280" y="195" width="190" height="70" rx="10" fill="#eaf2ff" stroke="#90b4e8"/>
+<text x="375.0" y="236.0" font-size="18" font-weight="600" text-anchor="middle">token dispatch</text>
+<rect x="280" y="325" width="350" height="70" rx="10" fill="#fff3e0" stroke="#e7ad57"/>
+<text x="455.0" y="353.5" font-size="18" font-weight="600" text-anchor="middle">down 权重预取</text>
+<text x="455.0" y="378.5" font-size="18" font-weight="400" text-anchor="middle">可与 dispatch / FC1 部分重叠</text>
+<rect x="550" y="150" width="190" height="95" rx="10" fill="#eaf2ff" stroke="#90b4e8"/>
+<text x="645.0" y="178.5" font-size="18" font-weight="600" text-anchor="middle">FC1 + 激活</text>
+<text x="645.0" y="203.5" font-size="18" font-weight="400" text-anchor="middle">等待 token</text>
+<text x="645.0" y="228.5" font-size="18" font-weight="400" text-anchor="middle">与 gate/up 权重</text>
+<rect x="820" y="150" width="145" height="95" rx="10" fill="#eaf2ff" stroke="#90b4e8"/>
+<text x="892.5" y="178.5" font-size="18" font-weight="600" text-anchor="middle">FC2</text>
+<text x="892.5" y="203.5" font-size="18" font-weight="400" text-anchor="middle">等待激活</text>
+<text x="892.5" y="228.5" font-size="18" font-weight="400" text-anchor="middle">与 down 权重</text>
+<rect x="1020" y="150" width="150" height="95" rx="10" fill="#eaf2ff" stroke="#90b4e8"/>
+<text x="1095.0" y="203.5" font-size="18" font-weight="600" text-anchor="middle">回传 / combine</text>
+<polyline points="210,230 245,230 245,135 280,135" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<polyline points="210,230 280,230" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<polyline points="245,230 245,360 280,360" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<polyline points="470,135 515,135 515,175 550,175" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<polyline points="470,230 550,230" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<polyline points="740,197 820,197" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<polyline points="630,360 892,360 892,245" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<polyline points="965,197 1020,197" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="30" y="435" font-size="18" font-weight="400" text-anchor="start">反向：副本计算权重梯度 → owner 拉回并累加；归约也需要独立核算暴露开销。</text>
+</g></svg>

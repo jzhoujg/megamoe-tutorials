@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="690" viewBox="0 0 1200 690" role="img" aria-labelledby="title desc">
+<title id="title">旧版选择性重算与新版 FC1 重算</title><desc id="desc">旧版保存 x 和 Y；新版保留 x，从 X_recv 重算 Y，再重建 A。两版保留路由与权重并供反向使用。</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#475569"/></marker></defs>
+<rect width="100%" height="100%" fill="#fff"/>
+<g font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" fill="#172b4d">
+<text x="30" y="36" font-size="25" font-weight="600" text-anchor="start">重算范围扩大：从 X_recv、A，到 X_recv、Y、A</text>
+<text x="30" y="70" font-size="18" font-weight="400" text-anchor="start">两版都保留原始输入、路由权重和布局快照；重算使用与前向对应的专家权重。</text>
+<text x="30" y="115" font-size="21" font-weight="600" text-anchor="start">旧版选择性重算：Y 跨越前向与反向保存（可卸载）</text>
+<rect x="30" y="140" width="220" height="65" rx="10" fill="#eaf2ff" stroke="#90b4e8"/>
+<text x="140.0" y="178.5" font-size="18" font-weight="600" text-anchor="middle">保留 x</text>
+<rect x="360" y="140" width="240" height="65" rx="10" fill="#fff3e0" stroke="#e7ad57"/>
+<text x="480.0" y="178.5" font-size="18" font-weight="600" text-anchor="middle">重发 → X_recv</text>
+<rect x="790" y="140" width="360" height="65" rx="10" fill="#f1f5f9" stroke="#cbd5e1"/>
+<text x="970.0" y="178.5" font-size="18" font-weight="600" text-anchor="middle">供 FC1 wgrad 使用</text>
+<polyline points="250,172 360,172" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<polyline points="600,172 790,172" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="30" y="245" width="220" height="65" rx="10" fill="#eaf2ff" stroke="#90b4e8"/>
+<text x="140.0" y="283.5" font-size="18" font-weight="600" text-anchor="middle">保留 FC1 输出 Y</text>
+<rect x="360" y="245" width="240" height="65" rx="10" fill="#fff3e0" stroke="#e7ad57"/>
+<text x="480.0" y="283.5" font-size="18" font-weight="600" text-anchor="middle">激活 + p 加权 → A</text>
+<rect x="790" y="245" width="360" height="65" rx="10" fill="#f1f5f9" stroke="#cbd5e1"/>
+<text x="970.0" y="283.5" font-size="18" font-weight="600" text-anchor="middle">供 FC2 wgrad 使用</text>
+<polyline points="250,277 360,277" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<polyline points="600,277 790,277" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="30" y="345" font-size="18" font-weight="400" text-anchor="start">保存的 Y 同时供激活反向使用。旧版不重新执行 FC1 GEMM。</text>
+<text x="30" y="400" font-size="21" font-weight="600" text-anchor="start">新版 FC1 重算：前向不为反向保存 Y</text>
+<rect x="30" y="430" width="180" height="75" rx="10" fill="#eaf2ff" stroke="#90b4e8"/>
+<text x="120.0" y="473.5" font-size="18" font-weight="600" text-anchor="middle">保留 x</text>
+<rect x="295" y="430" width="220" height="75" rx="10" fill="#fff3e0" stroke="#e7ad57"/>
+<text x="405.0" y="461.0" font-size="18" font-weight="600" text-anchor="middle">P1：重发</text>
+<text x="405.0" y="486.0" font-size="18" font-weight="400" text-anchor="middle">X_recv</text>
+<rect x="600" y="430" width="240" height="75" rx="10" fill="#fff3e0" stroke="#e7ad57"/>
+<text x="720.0" y="461.0" font-size="18" font-weight="600" text-anchor="middle">WR：FC1 GEMM</text>
+<text x="720.0" y="486.0" font-size="18" font-weight="400" text-anchor="middle">Y = X_recv @ W1</text>
+<rect x="925" y="430" width="245" height="75" rx="10" fill="#fff3e0" stroke="#e7ad57"/>
+<text x="1047.5" y="461.0" font-size="18" font-weight="600" text-anchor="middle">WA：激活 + p 加权</text>
+<text x="1047.5" y="486.0" font-size="18" font-weight="400" text-anchor="middle">A</text>
+<polyline points="210,467 295,467" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<polyline points="515,467 600,467" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<polyline points="840,467 925,467" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="553" y="420" font-size="16" font-weight="400" text-anchor="middle">B1</text>
+<text x="883" y="420" font-size="16" font-weight="400" text-anchor="middle">barrier</text>
+<polyline points="405,505 405,550" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<polyline points="720,505 720,550" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<polyline points="1047,505 1047,550" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="295" y="550" width="220" height="55" rx="10" fill="#f1f5f9" stroke="#cbd5e1"/>
+<text x="405.0" y="583.5" font-size="18" font-weight="600" text-anchor="middle">供 FC1 wgrad 使用</text>
+<rect x="600" y="550" width="240" height="55" rx="10" fill="#f1f5f9" stroke="#cbd5e1"/>
+<text x="720.0" y="583.5" font-size="18" font-weight="600" text-anchor="middle">供激活反向使用</text>
+<rect x="925" y="550" width="245" height="55" rx="10" fill="#f1f5f9" stroke="#cbd5e1"/>
+<text x="1047.5" y="583.5" font-size="18" font-weight="600" text-anchor="middle">供 FC2 wgrad 使用</text>
+<text x="30" y="645" font-size="18" font-weight="400" text-anchor="start">蓝色：长期保留的数据    橙色：反向重建的数据    灰色：反向消费者</text>
+<text x="30" y="674" font-size="17" font-weight="400" text-anchor="start">WA 后通过 barrier 发布再进入 P2/P3；图只表示依赖，不表示时间比例。重建矩阵仍占反向工作区。</text>
+</g></svg>

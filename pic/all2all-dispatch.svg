@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 560" font-family="'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a0" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#3b82f6"/>
+    </marker>
+    <marker id="a1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#f97316"/>
+    </marker>
+    <marker id="a2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#22c55e"/>
+    </marker>
+    <marker id="a3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#a855f7"/>
+    </marker>
+  </defs>
+  <style>
+    .t   { fill:#1f2937; }
+    .dim { fill:#64748b; }
+    .r0  { fill:#dbeafe; stroke:#3b82f6; stroke-width:1.2; }
+    .r1  { fill:#ffedd5; stroke:#f97316; stroke-width:1.2; }
+    .r2  { fill:#dcfce7; stroke:#22c55e; stroke-width:1.2; }
+    .r3  { fill:#f3e8ff; stroke:#a855f7; stroke-width:1.2; }
+    .f0  { stroke:#3b82f6; stroke-width:2.2; fill:none; opacity:0.5; marker-end:url(#a0); }
+    .f1  { stroke:#f97316; stroke-width:2.2; fill:none; opacity:0.5; marker-end:url(#a1); }
+    .f2  { stroke:#22c55e; stroke-width:2.2; fill:none; opacity:0.5; marker-end:url(#a2); }
+    .f3  { stroke:#a855f7; stroke-width:2.2; fill:none; opacity:0.5; marker-end:url(#a3); }
+  </style>
+
+  <!-- 白底 -->
+  <rect x="0" y="0" width="1180" height="560" fill="#ffffff"/>
+
+  <!-- 标题 -->
+  <text x="590" y="38" text-anchor="middle" font-size="17" font-weight="700" class="t">dispatch = 一次 all-to-all（4 rank 示意）</text>
+  <text x="590" y="62" text-anchor="middle" font-size="12" class="dim">颜色 = 来源 rank ｜ 段宽 ≈ 发往该目的地的行数（故意画得不均：路由天生不均）｜ 发给自己的那段走本地拷贝，不上网</text>
+
+  <!-- ══ 飞线（先画，压在发送/接收条下面） ══ -->
+  <!-- rank0 发出（蓝） -->
+  <path d="M 62 140 C 62 285, 63 295, 63 433" class="f0"/>
+  <path d="M 137 140 C 137 285, 348.5 295, 348.5 433" class="f0"/>
+  <path d="M 196 140 C 196 285, 646 295, 646 433" class="f0"/>
+  <path d="M 241 140 C 241 285, 942 295, 942 433" class="f0"/>
+  <!-- rank1 发出（橙） -->
+  <path d="M 339 140 C 339 285, 125.5 295, 125.5 433" class="f1"/>
+  <path d="M 404 140 C 404 285, 416.5 295, 416.5 433" class="f1"/>
+  <path d="M 480 140 C 480 285, 702.5 295, 702.5 433" class="f1"/>
+  <path d="M 535 140 C 535 285, 993 295, 993 433" class="f1"/>
+  <!-- rank2 发出（绿） -->
+  <path d="M 650 140 C 650 285, 176 295, 176 433" class="f2"/>
+  <path d="M 702 140 C 702 285, 474.5 295, 474.5 433" class="f2"/>
+  <path d="M 762 140 C 762 285, 771.5 295, 771.5 433" class="f2"/>
+  <path d="M 830 140 C 830 285, 1056.5 295, 1056.5 433" class="f2"/>
+  <!-- rank3 发出（紫） -->
+  <path d="M 946 140 C 946 285, 233.5 295, 233.5 433" class="f3"/>
+  <path d="M 1011 140 C 1011 285, 526.5 295, 526.5 433" class="f3"/>
+  <path d="M 1075 140 C 1075 285, 835 295, 835 433" class="f3"/>
+  <path d="M 1130 140 C 1130 285, 1125.5 295, 1125.5 433" class="f3"/>
+
+  <!-- ══ 发送侧 ══ -->
+  <!-- rank0 -->
+  <text x="140" y="88" text-anchor="middle" font-size="13" font-weight="700" class="t">rank 0 · 发送区（T·k 行）</text>
+  <rect x="20"  y="98" width="84" height="42" class="r0"/><text x="62"  y="124" text-anchor="middle" font-size="11.5" class="t">→0</text>
+  <rect x="104" y="98" width="66" height="42" class="r0"/><text x="137" y="124" text-anchor="middle" font-size="11.5" class="t">→1</text>
+  <rect x="170" y="98" width="52" height="42" class="r0"/><text x="196" y="124" text-anchor="middle" font-size="11.5" class="t">→2</text>
+  <rect x="222" y="98" width="38" height="42" class="r0"/><text x="241" y="124" text-anchor="middle" font-size="11.5" class="t">→3</text>
+  <!-- rank1 -->
+  <text x="440" y="88" text-anchor="middle" font-size="13" font-weight="700" class="t">rank 1 · 发送区（T·k 行）</text>
+  <rect x="320" y="98" width="38" height="42" class="r1"/><text x="339" y="124" text-anchor="middle" font-size="11.5" class="t">→0</text>
+  <rect x="358" y="98" width="92" height="42" class="r1"/><text x="404" y="124" text-anchor="middle" font-size="11.5" class="t">→1</text>
+  <rect x="450" y="98" width="60" height="42" class="r1"/><text x="480" y="124" text-anchor="middle" font-size="11.5" class="t">→2</text>
+  <rect x="510" y="98" width="50" height="42" class="r1"/><text x="535" y="124" text-anchor="middle" font-size="11.5" class="t">→3</text>
+  <!-- rank2 -->
+  <text x="740" y="88" text-anchor="middle" font-size="13" font-weight="700" class="t">rank 2 · 发送区（T·k 行）</text>
+  <rect x="620" y="98" width="60" height="42" class="r2"/><text x="650" y="124" text-anchor="middle" font-size="11.5" class="t">→0</text>
+  <rect x="680" y="98" width="44" height="42" class="r2"/><text x="702" y="124" text-anchor="middle" font-size="11.5" class="t">→1</text>
+  <rect x="724" y="98" width="76" height="42" class="r2"/><text x="762" y="124" text-anchor="middle" font-size="11.5" class="t">→2</text>
+  <rect x="800" y="98" width="60" height="42" class="r2"/><text x="830" y="124" text-anchor="middle" font-size="11.5" class="t">→3</text>
+  <!-- rank3 -->
+  <text x="1040" y="88" text-anchor="middle" font-size="13" font-weight="700" class="t">rank 3 · 发送区（T·k 行）</text>
+  <rect x="920"  y="98" width="52" height="42" class="r3"/><text x="946"  y="124" text-anchor="middle" font-size="11.5" class="t">→0</text>
+  <rect x="972"  y="98" width="78" height="42" class="r3"/><text x="1011" y="124" text-anchor="middle" font-size="11.5" class="t">→1</text>
+  <rect x="1050" y="98" width="50" height="42" class="r3"/><text x="1075" y="124" text-anchor="middle" font-size="11.5" class="t">→2</text>
+  <rect x="1100" y="98" width="60" height="42" class="r3"/><text x="1130" y="124" text-anchor="middle" font-size="11.5" class="t">→3</text>
+
+  <!-- ══ 接收侧 ══ -->
+  <!-- rank0 -->
+  <text x="140" y="423" text-anchor="middle" font-size="13" font-weight="700" class="t">rank 0 · 接收区（ΣR_e 行）</text>
+  <rect x="20"  y="435" width="86" height="42" class="r0"/><text x="63"    y="461" text-anchor="middle" font-size="11.5" class="t">0</text>
+  <rect x="106" y="435" width="39" height="42" class="r1"/><text x="125.5" y="461" text-anchor="middle" font-size="11.5" class="t">1</text>
+  <rect x="145" y="435" width="62" height="42" class="r2"/><text x="176"   y="461" text-anchor="middle" font-size="11.5" class="t">2</text>
+  <rect x="207" y="435" width="53" height="42" class="r3"/><text x="233.5" y="461" text-anchor="middle" font-size="11.5" class="t">3</text>
+  <!-- rank1 -->
+  <text x="440" y="423" text-anchor="middle" font-size="13" font-weight="700" class="t">rank 1 · 接收区（ΣR_e 行）</text>
+  <rect x="320" y="435" width="57" height="42" class="r0"/><text x="348.5" y="461" text-anchor="middle" font-size="11.5" class="t">0</text>
+  <rect x="377" y="435" width="79" height="42" class="r1"/><text x="416.5" y="461" text-anchor="middle" font-size="11.5" class="t">1</text>
+  <rect x="456" y="435" width="37" height="42" class="r2"/><text x="474.5" y="461" text-anchor="middle" font-size="11.5" class="t">2</text>
+  <rect x="493" y="435" width="67" height="42" class="r3"/><text x="526.5" y="461" text-anchor="middle" font-size="11.5" class="t">3</text>
+  <!-- rank2 -->
+  <text x="740" y="423" text-anchor="middle" font-size="13" font-weight="700" class="t">rank 2 · 接收区（ΣR_e 行）</text>
+  <rect x="620" y="435" width="52" height="42" class="r0"/><text x="646"   y="461" text-anchor="middle" font-size="11.5" class="t">0</text>
+  <rect x="672" y="435" width="61" height="42" class="r1"/><text x="702.5" y="461" text-anchor="middle" font-size="11.5" class="t">1</text>
+  <rect x="733" y="435" width="77" height="42" class="r2"/><text x="771.5" y="461" text-anchor="middle" font-size="11.5" class="t">2</text>
+  <rect x="810" y="435" width="50" height="42" class="r3"/><text x="835"   y="461" text-anchor="middle" font-size="11.5" class="t">3</text>
+  <!-- rank3 -->
+  <text x="1040" y="423" text-anchor="middle" font-size="13" font-weight="700" class="t">rank 3 · 接收区（ΣR_e 行）</text>
+  <rect x="920"  y="435" width="44" height="42" class="r0"/><text x="942"    y="461" text-anchor="middle" font-size="11.5" class="t">0</text>
+  <rect x="964"  y="435" width="58" height="42" class="r1"/><text x="993"    y="461" text-anchor="middle" font-size="11.5" class="t">1</text>
+  <rect x="1022" y="435" width="69" height="42" class="r2"/><text x="1056.5" y="461" text-anchor="middle" font-size="11.5" class="t">2</text>
+  <rect x="1091" y="435" width="69" height="42" class="r3"/><text x="1125.5" y="461" text-anchor="middle" font-size="11.5" class="t">3</text>
+
+  <!-- 底部注解 -->
+  <text x="590" y="518" text-anchor="middle" font-size="12.5" class="dim">接收区段内标号 = 来源 rank；段内再按专家分桶连续——这就是 2.1 的「分桶有序」，grouped GEMM 顺着段直接开算</text>
+  <text x="590" y="540" text-anchor="middle" font-size="12.5" class="dim">发送的是 T·k 个 token-专家对：topk 复制只发生在网络路上，显存里没有 k 份副本（2.3 第三问细讲）</text>
+</svg>
