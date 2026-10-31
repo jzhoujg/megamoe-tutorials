@@ -118,30 +118,7 @@ FC1 offload 的路径是：前向保存 Y → 搬到 pinned 主机内存 → 反
 
 选择重算后可以省去相应激活的保存，但输入和路由快照仍需存活到反向消费完毕。主机卸载还必须保证 D2H 完成前源数据有效、H2D 完成后消费者才能读；这也是 offload 除带宽之外的工程成本。
 
-## 8.6 开发者注记：版本、开关与验证入口
-
-新版统一通过 `runtime/fc1_mode.py::fc1_recompute_default()` 决定 FC1 的获取方式。以下对照针对**单 kernel 前向 + 融合反向**，且已开启 `MOE_BWD_MEGA=1`、`MOE_SAVED_RECOMPUTE=1`：
-
-| `MEGAMOE_BWD_FC1_RECOMPUTE` | `MEGAMOE_FC1_OFFLOAD` | FC1 获取方式 |
-|---|---|---|
-| 未设置 | 未设置或 0 | 默认重算 |
-| 未设置 | 1 | 保存并卸载到主机 |
-| 1 | 任意 | 显式重算优先，无 FC1 保存数据可卸载 |
-| 0 | 未设置或 0 | 常驻设备保存 |
-| 0 | 1 | 保存并卸载到主机 |
-
-因此，要回退到常驻保存，既要关闭 FC1 重算，也要关闭 offload。支持条件以调用路径与该函数为准，不能只向任意算子设置一个环境变量。
-
-阅读源码时可沿下面几个入口核对：
-
-- `ops/forward.py`：`save_fc1_for_bwd = return_saved and not _fc1_recompute` 控制是否为反向保存 FC1。
-- `ops/_single_saved_adapter.py` 与 `ops/backward.py`：重算模式允许 saved 中没有 `fc1_output`，仍检查必要的路由数据。
-- `kernels/mega_bwd.py`：`FC1_RECOMPUTE` 分支安排提前 re-dispatch、WR GEMM 和 WA 激活重建。
-- `ops/_native_saved.py`：多 kernel 路径的 `snapshot_plan_metadata`、`capture_activations`、`assemble_native_saved` 对应布局快照、激活捕获和契约组装。文件中“39 键”描述的是早期参考契约，不是所有路径必须保存的固定数量。
-
-评估时同时记录正确性、峰值显存、单步耗时和整网吞吐。释放空间可能允许更大 batch 或更长序列，这时需要在目标工作负载上重新比较，不能仅凭单层重算耗时判断最终收益。
-
-## 8.7 小结
+## 8.6 小结
 
 重算设计要同时回答三件事：哪些数据可以恢复、恢复成本落在哪些资源上、哪些数据仍要跨阶段保存。旧方案用 re-dispatch 和激活重建降低保存量；新版再用一次 FC1 GEMM 替代 Y 的长期保存与主机往返。路由身份和生命周期始终是正确性的前提。**最后一章把这些依赖放回全局调度，解释前向波流水与反向相位制的选择。**
 

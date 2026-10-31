@@ -108,15 +108,7 @@ routing 跨度为 `3200 − 0 = 3200 ticks`，pipeline 跨度为 `11200 − 3000
 
 第六章 6.3/6.5 的历史案例就是先通过打点定位 routing 元数据，再优化发布和散射。本节关注的是从读数到判断的过程；该案例的配置、收益与统计限制统一在第六章查阅。
 
-## 9.4 开发者注记（打点工具链）
-
-（给第三类读者）
-
-- 采集：`MOE_FWD_TIMING=1`，读数用 `read_last_forward_phase_timing()`；
-- 归约：`benchmark/layer/_fwd_phase_timing.py`（纯 host 归约脚本）；
-- 独立用例：`pytest tests/layer/test_fwd_phase_timing.py -m dist`——**一个节点只跑一种变体**（case × saved/unsaved × save_fc1_dtype），JSON 落 `MOE_FWD_TIMING_OUT_DIR`（默认 `results/fwd_phase_timing`）。
-
-## 9.5 小结
+## 9.4 小结
 
 前向的线性数据流便于组织三级波流水；反向的依赖网也能按块推进，但要处理多消费者、partial dW 和缓冲复用，当前实现采用相位制骨架并探索局部流水。**判断流水化是否划算，先画依赖图和数据生命周期，再核算同步、存储与计算效率的代价。**
 
